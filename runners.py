@@ -25,12 +25,14 @@ class Runner:
                  model_type='torch',
                  do_backprop=True,
                  k=[0,1.,0],
+                 enable_combo=False,
                  sigma_noi = 0,
                  test_vec=None,
                  initial_state=None,
                 load_model_at_init=False,
                 save_model_at_init=True,
                 fb_on_nan=lambda x,y:0.,
+                auto_steps=0,
                 info=None, #not in use
                 ):
         """
@@ -76,7 +78,8 @@ class Runner:
         self.k_ = torch.tensor(np.float32([self.k])).to(self.device)  
         self.ic = initial_state if initial_state is not None else 0.0  # Default to 0.0 if not provided
         self.fb_on_nan = fb_on_nan
-        
+        self.enable_combo = enable_combo
+        self.auto_steps = auto_steps
         # Initialize low-pass filter
         self.u_lp = LPF(tau=tau_u)
         
@@ -96,14 +99,15 @@ class Runner:
         self.reset()
     
     def reset(self, silent=False):
-        self.optimizer = optim.SGD(self.model.parameters(), 
-                                   lr=self.learning_rate)
         if self.loud and not silent:
             print('model reset')
         if self.model_type == 'torch':
+            self.optimizer = optim.SGD(self.model.parameters(), 
+                            lr=self.learning_rate)
             self.model.to(self.device)
             self.model.load_state_dict(torch.load(self.ic_param_file))
-        self.records = SimpleNamespace(u=[], u_lp=[], test_output=[])
+
+        self.records = SimpleNamespace(u=[], u_lp=[], test_output=[], extra_results=[])
         self.block_training_next_step = False
         self.u_lp.reset()
 
@@ -132,13 +136,29 @@ class Runner:
             loss = self.criterion(u_t, y_t)
             loss.backward()
             self.optimizer.step()
+
+    def take_measurements(self, extra_measurements):
+        '''
+        this method should cover any advanced evaluations that 
+        can be a function of the models partameters, its recurrent state or the hidden representation
+
+        extra_measurements: a list of functions that take the model as an argument
+        todo: add the recurrent state and the hidden representation as arguments
+        '''
+        results = []
+        if extra_measurements is not None:
+            for f in extra_measurements:
+                results.append(f(self.model))
+        
+        return results
+
             
-    def step(self, y_t, x_tm1, measurements=None):
+    def step(self, y_t, x_tm1, extra_measurements=None, record=True):
         '''
         single step of continual learning 
         with optional training
         '''
-        
+
         model_input = self.k*x_tm1
         
         if self.model_type=='torch':
@@ -169,26 +189,47 @@ class Runner:
             
         x_t = np.array([self.u_lp.state,
                         y_t,
-                        err_t])
+                        err_t]+([self.u_lp.state + err_t] if self.enable_combo else []))
 
-        self.records.u.append(u_t)
-        self.records.u_lp.append(self.u_lp.state)
+        if record:
+            self.records.u.append(u_t)
+            self.records.u_lp.append(self.u_lp.state)
+
+            self.records.extra_results.append(
+                self.take_measurements(extra_measurements))
 
         return x_t 
     
-    def run(self,y,do_return=True,test_vec=None):
+    def run(self,y,
+            do_return=True,
+            test_vec=None,
+            extra_measurements=None):
         '''
         full training session
+        test_vec: optional test vector
+        measurements: optional measurements
         '''
         this_state = self.initial_state
         for t, y_t in enumerate(y):
             self.test_vec_eval()
-            this_state = self.step(y_t,this_state)            
+            this_state = self.step(y_t,
+                                   this_state,
+                                   extra_measurements=extra_measurements,
+                                   record=True) 
+            for _ in range(self.auto_steps):
+                self.step(np.nan,
+                          this_state,
+                          extra_measurements=extra_measurements,
+                          record=False)
+            self.block_training_next_step = False #todo - fix this           
             
         if do_return:
             return copy(self.records), self.model
         
-    def run_multiple(self,playlist, silent=False):
+    def run_multiple(self,playlist,             
+            test_vec=None,
+            extra_measurements=None,
+            silent=False):
         results = {}
         
         for name, scenario in playlist.items():
@@ -200,5 +241,5 @@ class Runner:
             else:
                 raise NotImplementedError #in future we will also support parsed lists
                 
-            results[name], _model = self.run(to_play)
+            results[name], _model = self.run(to_play,test_vec=test_vec,extra_measurements=extra_measurements)
         return results

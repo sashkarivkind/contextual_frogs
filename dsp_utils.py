@@ -80,7 +80,7 @@ def parse_samples(segments):
     - segments: list of tuples, where each tuple is of the form:
         (val, n_samples): constant value over the segment, or
         ((val1, val2), n_samples): linear interpolation between val1 and val2 over the segment.
-
+        (arr/lst, n_samples): np array or list of values over the segment.
     Returns:
     - np.ndarray: Vector of samples.
     """
@@ -92,6 +92,20 @@ def parse_samples(segments):
             (val1, val2), n_samples = segment
             interpolated = np.linspace(val1, val2, n_samples, endpoint=False)
             samples.extend(interpolated)
+        elif isinstance(segment[0], np.ndarray):
+            # Array case
+            arr, n_samples = segment
+            # raise error if n_samples is not equal to the length of the array
+            if len(arr) != n_samples:
+                raise ValueError
+            samples.extend(arr.tolist())
+        elif isinstance(segment[0], list):
+            # List case
+            lst, n_samples = segment
+            # raise error if n_samples is not equal to the length of the list
+            if len(lst) != n_samples:
+                raise ValueError
+            samples.extend(lst)
         else:
             # Constant value case
             val, n_samples = segment

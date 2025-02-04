@@ -58,6 +58,9 @@ def compute_ntk_ana(Nin=None,N=None,P0=None,Pplus=None,nl=None,nl_p=None, return
         nl, nl_p = sigmoid, sigmoid_p
     elif nl=='tanh':
         nl, nl_p = tanh, tanh_p
+     #in case nl is string, but unknown, raise error 
+    elif type(nl)==str: 
+        raise ValueError
 
     ntk_w2 = np.zeros([2,2])
     ntk_b1 = np.zeros([2,2])
