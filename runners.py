@@ -25,14 +25,17 @@ class Runner:
                  model_type='torch',
                  do_backprop=True,
                  k=[0,1.,0],
+                 constancy_factor=None,
                  enable_combo=False,
                  sigma_noi = 0,
                  test_vec=None,
                  initial_state=None,
+                 apply_initial_state=True,
                 load_model_at_init=False,
                 save_model_at_init=True,
                 fb_on_nan=lambda x,y:0.,
                 auto_steps=0,
+                grad_less_steps=0,
                 info=None, #not in use
                 ):
         """
@@ -59,9 +62,13 @@ class Runner:
             self.parse_criterion()
         
         self.model = model_class(**model_construct_args) if model is None else model            
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if device is None else device       
-        self.initial_state = np.zeros(model_construct_args['n_inputs']) if initial_state is None else initial_state
-        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if device is None else device    
+
+        if apply_initial_state:   
+            self.initial_state = np.zeros(model_construct_args['n_inputs']) if initial_state is None else initial_state
+        else:
+            self.initial_state = None
+            
         self.ic_param_file = ic_param_file
             
         if load_model_at_init:
@@ -69,7 +76,7 @@ class Runner:
         elif save_model_at_init:
             torch.save(self.model.state_dict(), self.ic_param_file)
         
-        
+        self.constancy_factor = constancy_factor
         self.tau_u = tau_u
         self.loud = loud
         self.model_type = model_type
@@ -80,6 +87,7 @@ class Runner:
         self.fb_on_nan = fb_on_nan
         self.enable_combo = enable_combo
         self.auto_steps = auto_steps
+        self.grad_less_steps = grad_less_steps
         # Initialize low-pass filter
         self.u_lp = LPF(tau=tau_u)
         
@@ -96,16 +104,19 @@ class Runner:
         self.learning_rate = learning_rate
 
         # Reset the model and low-pass filter
-        self.reset()
+        self.reset(silent=True)
     
     def reset(self, silent=False):
         if self.loud and not silent:
             print('model reset')
+
+        self.model.reset_state()
         if self.model_type == 'torch':
             self.optimizer = optim.SGD(self.model.parameters(), 
                             lr=self.learning_rate)
             self.model.to(self.device)
-            self.model.load_state_dict(torch.load(self.ic_param_file))
+            if self.ic_param_file is not None:
+                self.model.load_state_dict(torch.load(self.ic_param_file))
 
         self.records = SimpleNamespace(u=[], u_lp=[], test_output=[], extra_results=[])
         self.block_training_next_step = False
@@ -131,9 +142,13 @@ class Runner:
                 test_output = self.model(self.k_*self.test_vec)
                 self.records.test_output.append(test_output.cpu().detach().numpy())
     
-    def opt_(self, u_t, y_t):
-            y_t = torch.tensor([float(y_t)], requires_grad=False).to(self.device)
-            loss = self.criterion(u_t, y_t)
+    def opt_(self, u_t, y_t, constancy_factor=None, u_tm1=None):
+            
+            if constancy_factor is not None:
+                y_t = (1-constancy_factor)*y_t + constancy_factor*u_tm1
+
+            y_t_ = torch.tensor([float(y_t)], requires_grad=False).to(self.device)
+            loss = self.criterion(u_t, y_t_)
             loss.backward()
             self.optimizer.step()
 
@@ -160,7 +175,13 @@ class Runner:
         '''
 
         model_input = self.k*x_tm1
-        
+
+        #hook for taking the first element of x_tm1 as u_tm1
+        if self.constancy_factor is not None:
+            u_tm1 = x_tm1[0]
+            torch_u_tm1 = torch.tensor([float(u_tm1)], requires_grad=False).to(self.device)
+
+        # applying model to the previous state; previous state relies on the previous sensory feedback (AKA y_{t-1})
         if self.model_type=='torch':
             self.model.train()
             self.optimizer.zero_grad()        
@@ -169,24 +190,35 @@ class Runner:
             )
             u_t = torch_u_t.cpu().detach().numpy().squeeze()
         elif self.model_type=='numpy':
-            u_t = model(model_input)
+            u_t = self.model(model_input)
         else:
             raise ValueError
             
         self.u_lp.step(u_t, silent=True)
 
+        #updating error if applicable (that is if y_t is not nan)
+        #then:
+        #taking training step on model parameters based on the current sensory feedback:
+        # target is y_t while and the  prediction which is based on the previous state: 
         cond = not np.isnan(y_t)
         if cond:
             err_t = (y_t - self.u_lp.state)
             if self.do_backprop and not self.block_training_next_step:
-                self.opt_(torch_u_t,y_t)
-                        
+                self.opt_(torch_u_t,y_t,
+                          **({'constancy_factor': self.constancy_factor, 'u_tm1':torch_u_tm1} if self.constancy_factor is not None else {}))
+        elif self.constancy_factor is not None:
+            y_t = u_tm1
+            err_t = np.zeros_like(self.u_lp.state)
+            if self.do_backprop and not self.block_training_next_step:
+                self.opt_(torch_u_t,y_t,
+                          **({'constancy_factor': self.constancy_factor, 'u_tm1':torch_u_tm1} if self.constancy_factor is not None else {}))                 
         else:
             err_t = np.zeros_like(self.u_lp.state)
 
-        self.block_training_next_step = not cond
+        self.block_training_next_step = not cond #todo: currently overriden at the top level. fix this (either remove here or check why needed)
         y_t = y_t if not np.isnan(y_t) else self.fb_on_nan(self.u_lp.state,err_t)
-            
+
+        #preparing the state for the next step    
         x_t = np.array([self.u_lp.state,
                         y_t,
                         err_t]+([self.u_lp.state + err_t] if self.enable_combo else []))
@@ -200,7 +232,7 @@ class Runner:
 
         return x_t 
     
-    def run(self,y,
+    def run(self,scenario,
             do_return=True,
             test_vec=None,
             extra_measurements=None):
@@ -209,6 +241,11 @@ class Runner:
         test_vec: optional test vector
         measurements: optional measurements
         '''
+        if type(scenario) == list:
+                y = parse_samples(scenario)
+        else:
+            raise NotImplementedError #in future we will also support parsed lists
+
         this_state = self.initial_state
         for t, y_t in enumerate(y):
             self.test_vec_eval()
@@ -217,10 +254,16 @@ class Runner:
                                    extra_measurements=extra_measurements,
                                    record=True) 
             for _ in range(self.auto_steps):
-                self.step(np.nan,
-                          this_state,
-                          extra_measurements=extra_measurements,
-                          record=False)
+                this_state = self.step(np.nan,
+                            this_state,
+                            extra_measurements=extra_measurements,
+                            record=False)
+            for _ in range(self.grad_less_steps):
+                self.block_training_next_step = True
+                this_state = self.step(y_t,
+                            this_state,
+                            extra_measurements=extra_measurements,
+                            record=True)
             self.block_training_next_step = False #todo - fix this           
             
         if do_return:
@@ -236,10 +279,63 @@ class Runner:
             self.reset(silent=True) #verbosing done below anyway, therefore 'silent' here
             if not silent:
                 print(f'running scenario: {name}')
-            if type(scenario) == list:
-                to_play = parse_samples(scenario)
-            else:
-                raise NotImplementedError #in future we will also support parsed lists
+
+            #todo: remove this block after validation
+            # if type(scenario) == list:
+            #     to_play = parse_samples(scenario)
+            # else:
+            #     raise NotImplementedError #in future we will also support parsed lists
                 
-            results[name], _model = self.run(to_play,test_vec=test_vec,extra_measurements=extra_measurements)
+            results[name], _model = self.run(scenario,test_vec=test_vec,extra_measurements=extra_measurements)
         return results
+    
+
+def wrap_runner_for_optimization(model_class=None,fixed_params={},optim_params_mapping=[], postprocessing_fun=None, runner_class=Runner):
+    
+    '''
+    wrapper for the runner construction and application
+    for the purpose of optimization
+
+    model_class: class
+        the class of the core model to be optimized
+    fixed_params: dict
+        parameters that are fixed and not subject to optimization
+    optim_params_mapping: list of tuples
+        a list of tuples (param_cathegory,param_name) or (param_cathegory,param_name,preprocessing_function)
+    '''
+    
+    known_param_categories = ['model','runner','postprocessing']
+
+    for foo in optim_params_mapping:
+        param_cathegory = foo[0]
+        if param_cathegory not in known_param_categories:
+            raise ValueError(f'param_cathegory: {param_cathegory} not recognized')
+    
+    model_args = fixed_params['model'] if 'model' in fixed_params else {}
+    runner_args = fixed_params['runner'] if 'runner' in fixed_params else {}
+    postprocessing_args = fixed_params['postprocessing'] if 'postprocessing' in fixed_params else {}
+
+    def wrapped_runner(stimulus,param_vals):
+        
+        optim_params = {param_cathegory: {} for param_cathegory in known_param_categories}
+        
+        for i, param_val in enumerate(param_vals):
+            if len(optim_params_mapping[i]) == 2:
+                param_cathegory, param_name = optim_params_mapping[i]
+                optim_params[param_cathegory][param_name] = param_val
+            elif len(optim_params_mapping[i]) == 3:   
+                param_cathegory, param_name, preprocessing_function = optim_params_mapping[i]
+                optim_params[param_cathegory][param_name] = preprocessing_function(param_val)
+
+        runner = runner_class(model_class=model_class, model_construct_args={**model_args, **optim_params['model']},
+                        test_vec=None,
+                        **{**runner_args,**optim_params['runner']})
+        
+        result = runner.run(stimulus)[0].u_lp
+
+        if postprocessing_fun is not None:
+            result = postprocessing_fun(result,**{**postprocessing_args, **optim_params['postprocessing']})
+
+        return result
+    
+    return wrapped_runner
