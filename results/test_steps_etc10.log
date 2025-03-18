@@ -1,0 +1,45 @@
+at minimum 42.8771 accepted 1  with params [-4.5         0.4         0.5        36.19076554]
+Traceback (most recent call last):
+  File "fit_single_v1.py", line 92, in <module>
+    opt_out[pooling_fun] = basinhopping(fitting_loss[pooling_fun], x0, niter=args.max_iter,
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 693, in basinhopping
+    new_global_min = bh.one_cycle()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 152, in one_cycle
+    accept, minres = self._monte_carlo_step()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 104, in _monte_carlo_step
+    minres = self.minimizer(x_after_step)
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 284, in __call__
+    return self.minimizer(self.func, x0, **self.kwargs)
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_minimize.py", line 619, in minimize
+    return _minimize_lbfgsb(fun, x0, args, jac, bounds,
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/lbfgsb.py", line 360, in _minimize_lbfgsb
+    f, g = func_and_grad(x)
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 261, in fun_and_grad
+    self._update_grad()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 231, in _update_grad
+    self._update_grad_impl()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 151, in update_grad
+    self.g = approx_derivative(fun_wrapped, self.x, f0=self.f,
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_numdiff.py", line 486, in approx_derivative
+    return _dense_difference(fun_wrapped, x0, f0, h,
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_numdiff.py", line 557, in _dense_difference
+    df = fun(x) - f0
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_numdiff.py", line 437, in fun_wrapped
+    f = np.atleast_1d(fun(x, *args, **kwargs))
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 130, in fun_wrapped
+    return fun(x, *args)
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../fitting_utils.py", line 41, in loss_fun
+    model_output = wrapped_model(stimulus,params)
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../runners.py", line 353, in wrapped_runner
+    result = runner.run(stimulus)[0].u_lp
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../runners.py", line 254, in run
+    this_state = self.step(y_t,
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../runners.py", line 209, in step
+    self.opt_(torch_u_t,y_t,
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../runners.py", line 152, in opt_
+    loss.backward()
+  File "/opt/conda/lib/python3.8/site-packages/torch/_tensor.py", line 402, in backward
+    torch.autograd.backward(self, gradient, retain_graph, create_graph, inputs=inputs)
+  File "/opt/conda/lib/python3.8/site-packages/torch/autograd/__init__.py", line 191, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt

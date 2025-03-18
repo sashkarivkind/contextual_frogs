@@ -184,9 +184,11 @@ class Runner:
         # applying model to the previous state; previous state relies on the previous sensory feedback (AKA y_{t-1})
         if self.model_type=='torch':
             self.model.train()
-            self.optimizer.zero_grad()        
+            self.optimizer.zero_grad() 
+            # print('model_input',model_input) 
+            model_input_ = torch.tensor(np.float32(model_input), requires_grad=False).to(self.device)
             torch_u_t = self.model(
-                torch.tensor(np.float32(model_input), requires_grad=False).to(self.device)
+                model_input_
             )
             u_t = torch_u_t.cpu().detach().numpy().squeeze()
         elif self.model_type=='numpy':
@@ -279,18 +281,17 @@ class Runner:
             self.reset(silent=True) #verbosing done below anyway, therefore 'silent' here
             if not silent:
                 print(f'running scenario: {name}')
-
-            #todo: remove this block after validation
-            # if type(scenario) == list:
-            #     to_play = parse_samples(scenario)
-            # else:
-            #     raise NotImplementedError #in future we will also support parsed lists
                 
             results[name], _model = self.run(scenario,test_vec=test_vec,extra_measurements=extra_measurements)
         return results
     
 
-def wrap_runner_for_optimization(model_class=None,fixed_params={},optim_params_mapping=[], postprocessing_fun=None, runner_class=Runner):
+def wrap_runner_for_optimization(model_class=None,
+                                 fixed_params={},
+                                 optim_params_mapping=[],
+                                 custom_param_mappings=[], 
+                                 postprocessing_fun=None, 
+                                 runner_class=Runner):
     
     '''
     wrapper for the runner construction and application
@@ -302,9 +303,11 @@ def wrap_runner_for_optimization(model_class=None,fixed_params={},optim_params_m
         parameters that are fixed and not subject to optimization
     optim_params_mapping: list of tuples
         a list of tuples (param_cathegory,param_name) or (param_cathegory,param_name,preprocessing_function)
+    custom_param_mappings: a more general interface for parameter mapping: list of dicts with  keys 'fun','cathergory','param_name':
+        each fun must be a function of all the optimization parameters and return a value that will be subsequently passed to one of the optim_params categories 
     '''
     
-    known_param_categories = ['model','runner','postprocessing']
+    known_param_categories = ['model','runner','postprocessing','custom']
 
     for foo in optim_params_mapping:
         param_cathegory = foo[0]
@@ -319,13 +322,23 @@ def wrap_runner_for_optimization(model_class=None,fixed_params={},optim_params_m
         
         optim_params = {param_cathegory: {} for param_cathegory in known_param_categories}
         
+        #basic assingment of param_vals to the optim_params
         for i, param_val in enumerate(param_vals):
+            if optim_params_mapping[i][0] == 'custom':
+                continue
+
             if len(optim_params_mapping[i]) == 2:
                 param_cathegory, param_name = optim_params_mapping[i]
                 optim_params[param_cathegory][param_name] = param_val
             elif len(optim_params_mapping[i]) == 3:   
                 param_cathegory, param_name, preprocessing_function = optim_params_mapping[i]
                 optim_params[param_cathegory][param_name] = preprocessing_function(param_val)
+
+        #performing custom mappings that might involve multiple input parameters being transformed into a single output parameter and vice versa
+        param_vals_dict = {optim_params_mapping_el[1]: param_val for optim_params_mapping_el, param_val in zip(optim_params_mapping,param_vals)}   
+
+        for custom_param_mappting in custom_param_mappings:
+            optim_params[custom_param_mappting['cathegory']][custom_param_mappting['param_name']] = custom_param_mappting['fun'](param_vals_dict)
 
         runner = runner_class(model_class=model_class, model_construct_args={**model_args, **optim_params['model']},
                         test_vec=None,

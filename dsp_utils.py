@@ -72,47 +72,55 @@ def compute_steady_state_covariance(f=None, q=None, r=None, n_iter=1000, tol=1e-
     
     return P  # Return the last value if convergence is not reached
 
+
+import numpy as np
+
+def process_segment(segment):
+    """
+    Process a single segment into its corresponding samples.
+    
+    Parameters:
+    - segment: tuple of the form:
+        (val, n_samples): constant value over the segment, or
+        ((val1, val2), n_samples): linear interpolation between val1 and val2, or
+        (array/list, n_samples): explicit values over the segment.
+    
+    Returns:
+    - list: Samples from the segment.
+    """
+    value, n_samples = segment
+
+    if isinstance(value, tuple):
+        # Linear interpolation case
+        val1, val2 = value
+        return np.linspace(val1, val2, n_samples, endpoint=False).tolist()
+    
+    elif isinstance(value, (np.ndarray, list)):
+        # Array or list case
+        if len(value) != n_samples:
+            raise ValueError(f"Length of provided array/list does not match n_samples ({len(value)} != {n_samples})")
+        return value.tolist() if isinstance(value, np.ndarray) else value
+    
+    else:
+        # Constant value case
+        return [value] * n_samples
+
+
 def parse_samples(segments):
     """
     Parse a list of segments into a vector of samples.
-
+    
     Parameters:
-    - segments: list of tuples, where each tuple is of the form:
-        (val, n_samples): constant value over the segment, or
-        ((val1, val2), n_samples): linear interpolation between val1 and val2 over the segment.
-        (arr/lst, n_samples): np array or list of values over the segment.
+    - segments: list of tuples (segment, n_samples).
+    
     Returns:
     - np.ndarray: Vector of samples.
     """
     samples = []
-    
     for segment in segments:
-        if isinstance(segment[0], tuple):
-            # Linear interpolation case
-            (val1, val2), n_samples = segment
-            interpolated = np.linspace(val1, val2, n_samples, endpoint=False)
-            samples.extend(interpolated)
-        elif isinstance(segment[0], np.ndarray):
-            # Array case
-            arr, n_samples = segment
-            # raise error if n_samples is not equal to the length of the array
-            if len(arr) != n_samples:
-                raise ValueError
-            samples.extend(arr.tolist())
-        elif isinstance(segment[0], list):
-            # List case
-            lst, n_samples = segment
-            # raise error if n_samples is not equal to the length of the list
-            if len(lst) != n_samples:
-                raise ValueError
-            samples.extend(lst)
-        else:
-            # Constant value case
-            val, n_samples = segment
-            constant = [val] * n_samples
-            samples.extend(constant)
-
+        samples.extend(process_segment(segment))
     return np.array(samples)
+
 
 def seg_time(segment_list,segment_num,side='end'):
     '''

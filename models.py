@@ -88,15 +88,16 @@ class MLP(nn.Module, ModelForRunner):
                  info=None):
         super(MLP, self).__init__()
         
-        self.prescaling = prescaling
-        self.main_gain  = main_gain 
+
         if prescaling is not None:
             #ensure prescaling is same size as n_inputs
             if len(prescaling) != n_inputs:
                 raise ValueError('prescaling must be same size as n_inputs')
-            self.prescaling = torch.tensor(prescaling, dtype=torch.float32, requires_grad=False)
+            prescaling = torch.tensor(prescaling, dtype=torch.float32, requires_grad=False)
         else:
-            self.prescaling = torch.ones(n_inputs, dtype=torch.float32, requires_grad=False)
+            prescaling = torch.ones(n_inputs, dtype=torch.float32, requires_grad=False)
+        #prescaling is not a layer and therefre should be registered as buffer
+        self.register_buffer('prescaling', prescaling)
 
         if main_gain  is not None:
             #ensure outscaling is same size as n_outs
@@ -104,10 +105,24 @@ class MLP(nn.Module, ModelForRunner):
                 main_gain = [main_gain]
             if len(main_gain) != n_outs:
                 raise ValueError('outscaling must be same size as n_outs')
-            self.main_gain  = torch.tensor(main_gain, dtype=torch.float32, requires_grad=False)
+            main_gain  = torch.tensor(main_gain, dtype=torch.float32, requires_grad=False)
         else:
-            self.main_gain  = torch.ones(n_outs, dtype=torch.float32, requires_grad=False)
+            main_gain  = torch.ones(n_outs, dtype=torch.float32, requires_grad=False)
 
+        skip_gain = skip_gain if skip_gain is not None else 0  # Default gain is 0
+
+        if isinstance(skip_gain, list) or isinstance(skip_gain, np.ndarray):
+            skip_gain = torch.tensor(skip_gain, dtype=torch.float32, requires_grad=False)
+        else:
+            skip_gain = torch.tensor([skip_gain]*n_outs, dtype=torch.float32, requires_grad=False)
+
+        #prescaling, main_gain, skip_gain are not layers and therefre should be registered as buffer
+        self.register_buffer('prescaling', prescaling)
+        self.register_buffer('main_gain', main_gain)
+        self.register_buffer('skip_gain', skip_gain)
+
+        nl = nl_selector(nl)
+        self.activation = nl()
 
         # Input layer
         if b_low is None and b_high is not None:
@@ -116,16 +131,6 @@ class MLP(nn.Module, ModelForRunner):
         custom_first_bias = b_low is not None and b_high is not None
 
         self.n_layers = n_layers
-        self.skip_gain = skip_gain if skip_gain is not None else 0  # Default gain is 0
-
-        if isinstance(self.skip_gain, list) or isinstance(self.skip_gain, np.ndarray):
-            self.skip_gain = torch.tensor(self.skip_gain, dtype=torch.float32, requires_grad=False)
-        else:
-            self.skip_gain = torch.tensor([self.skip_gain]*n_outs, dtype=torch.float32, requires_grad=False)
-
-        nl = nl_selector(nl)
-        self.activation = nl()
-
 
         self.input_layer = nn.Linear(n_inputs, n_hidden, bias=en_bias or custom_first_bias)
         
@@ -322,3 +327,73 @@ class Herzfeld14Model(ModelForRunner):
         :return: The total adaptation response.
         """
         return self.step(e)
+
+
+
+class MLP_minimal(nn.Module, ModelForRunner):
+    def __init__(self, n_inputs=None, n_hidden=None, n_outs=None, n_layers=1, nl='tanh', en_bias=True, prescaling=None, main_gain=None,
+                 b_low=None, b_high=None, first_layer_init='default', skip_gain=None, first_layer_weights_trainable=False, out_layer_init='default',
+                 info=None):
+        super(MLP_minimal, self).__init__()
+        
+
+        nl = nl_selector(nl)
+        self.activation = nl()
+
+        # Input layer
+        if b_low is None and b_high is not None:
+            b_low = -b_high
+
+        custom_first_bias = b_low is not None and b_high is not None
+
+        self.n_layers = n_layers
+
+        self.input_layer = nn.Linear(n_inputs, n_hidden, bias=en_bias or custom_first_bias)
+        
+        if first_layer_init == 'ones':
+            nn.init.constant_(self.input_layer.weight, 1.0)          
+        elif first_layer_init == 'uniform_unity':
+            nn.init.uniform_(self.input_layer.weight, -1, 1)
+        elif first_layer_init == 'default':
+            pass
+        else:
+            raise ValueError('Unknown first_layer_init')
+
+        self.input_layer.weight.requires_grad = first_layer_weights_trainable
+
+        if custom_first_bias:
+            bias_values = torch.linspace(b_low, b_high, n_hidden)
+            with torch.no_grad():
+                self.input_layer.bias.copy_(bias_values)
+            self.input_layer.bias.requires_grad = False
+
+        self.hidden_layers = nn.ModuleList([
+            nn.Linear(n_hidden, n_hidden, bias=en_bias) for _ in range(n_layers - 1)
+        ])
+
+        self.output_layer = nn.Linear(n_hidden, n_outs, bias=en_bias)
+
+        if out_layer_init == 'ones':
+            nn.init.constant_(self.output_layer.weight, 1.0)
+        elif out_layer_init == 'uniform_unity':
+            nn.init.uniform_(self.output_layer.weight, -1, 1)
+        elif out_layer_init == 'zeros':
+            nn.init.constant_(self.output_layer.weight, 0.0)
+        elif out_layer_init == 'default':
+            pass
+
+    def forward(self, x):
+        
+        x = self.input_layer(x)
+        x = self.activation(x)
+
+        for layer in self.hidden_layers:
+            x = layer(x)
+            x = self.activation(x)
+        
+        x = self.output_layer(x)
+
+        return x
+    
+    def reset_state(self):
+        pass

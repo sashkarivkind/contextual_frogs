@@ -1,0 +1,59 @@
+    1  ls
+    2  export HOME=/workspace
+    3  jupyter notebook
+    4  bg
+    5  pwd
+    6  cd one_more_dir/one_more_dir/contextual_frogs/experimental/
+    7  ls
+    8    ./sweep_subjects.sh --this_sweep_name test_steps_etc --min 3 --max 12       python --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name"       '>' "${_sweep_name}${_sweep_var}.log" '2>&1'
+    9* bash  ./sweep_subjects.sh --this_sweep_name test_steps_etc --min 3 --max 12  python fit_single_v1.py--subject_id "_sweep_var" --max_iter 1 --file_name_prefix "_sweep_name"       '>' "${_sweep_name}${_sweep_var}.log" '2>&1'
+   10  ls
+   11  ls
+   12  top
+   13  ls
+   14  ls *.*
+   15  top
+   16    
+   17  kill 311 362 1527 2054 2070
+   18  top
+   19  top
+   20    ./sweep_subjects.sh --this_sweep_name test_steps_etc --min 3 --max 12       python --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name"       '>' "${_sweep_name}${_sweep_var}.log" '2>&1'
+   21  bash   ./sweep_subjects.sh --this_sweep_name test_steps_etc --min 3 --max 12       python fit_single_v1.py  --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name"       '>' "${_sweep_name}${_sweep_var}.log" '2>&1'
+   22  bash   ./sweep_subjects.sh --this_sweep_name test_steps_etc --min 3 --max 12       python fit_single_v1.py  --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1'
+   23  bash   ./sweep_subjects.sh --this_sweep_name test_steps_BCKGND_ --min 3 --max 12       python fit_single_v1.py  --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+   24  bash   ./sweep_subjects.sh --this_sweep_name test_steps_CFGn2__ --min 3 --max 12       python fit_single_v1.py  --param_config_id 2 --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+   25  bash   ./sweep_subjects.sh --this_sweep_name test_steps_CFGn3__ --min 3 --max 12       python fit_single_v1.py  --param_config_id 3 --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+   26  bash   ./sweep_subjects.sh --this_sweep_name sweek_k1k3_try1_       python fit_single_v1.py  --param_config_id 3 --subject_id "_sweep_var" --max_iter 100 --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+   27  bash   ./sweep_subjects.sh --this_sweep_name sweek_k1k3_try2_       python fit_single_v1.py  --param_config_id 3 --subject_id "_sweep_var" --max_iter 100 --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+   28  ls -lth
+   29  ls -lth | more
+   30  ls -lth | more
+   31  ls -lth 
+   32  ls -lth  *k1k3*
+   33  ls -lth  *k1k3_try2*
+   34  ls -lth  *k1k3_try2*
+   35  ls -lth  *k1k3_try2*
+   36  ls -lth  *k1k3_try1*log
+   37  ls -lth  *k1k3_try2*log
+   38  ls -lth  *k1k3_try2*log
+   39  ls -lth  *k1k3_try2*log
+   40  ls -lth  *k1k3_try2*log
+   41  ls -lth  *k1k3_try2*log
+   42  ls -lth  *k1k3_try2*log
+   43  ls -lth  *k1k3_try2*log
+   44  ls -lth  *k1k3_try2*log
+   45  ls -lth  *k1k3_try2*log
+   46  ls -lth  *k1k3_try2*log
+   47  ls -lth  *k1k3_try2*log
+   48  ls -lth  *k1k3_try2*log
+   49  ls -lth  *k1k3_try2*log
+   50  ls -lth  *k1k3_try2*log
+   51  ls -lth  *k1k3_try2*log
+   52  ls -lth  *k1k3_try2*log
+   53  ls -lth  *k1k3_try2*log
+   54  ls -lth  *k1k3_try2*log
+   55  top
+   56  top
+   57  hist
+   58  history | hist1.txt
+   59  history > hist1.txt

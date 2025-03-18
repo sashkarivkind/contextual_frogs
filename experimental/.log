@@ -1,0 +1,42 @@
+at minimum 42.8771 accepted 1  with params [-4.5         0.4         0.5        36.19076554]
+at minimum 61.4755 accepted 0  with params [-4.72743456  0.84121848  0.5278084  32.31157405]
+Traceback (most recent call last):
+  File "fit_single_v1.py", line 92, in <module>
+    opt_out[pooling_fun] = basinhopping(fitting_loss[pooling_fun], x0, niter=args.max_iter,
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 693, in basinhopping
+    new_global_min = bh.one_cycle()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 152, in one_cycle
+    accept, minres = self._monte_carlo_step()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 104, in _monte_carlo_step
+    minres = self.minimizer(x_after_step)
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_basinhopping.py", line 284, in __call__
+    return self.minimizer(self.func, x0, **self.kwargs)
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_minimize.py", line 619, in minimize
+    return _minimize_lbfgsb(fun, x0, args, jac, bounds,
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/lbfgsb.py", line 360, in _minimize_lbfgsb
+    f, g = func_and_grad(x)
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 260, in fun_and_grad
+    self._update_fun()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 226, in _update_fun
+    self._update_fun_impl()
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 133, in update_fun
+    self.f = fun_wrapped(self.x)
+  File "/opt/conda/lib/python3.8/site-packages/scipy/optimize/_differentiable_functions.py", line 130, in fun_wrapped
+    return fun(x, *args)
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../fitting_utils.py", line 41, in loss_fun
+    model_output = wrapped_model(stimulus,params)
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../runners.py", line 353, in wrapped_runner
+    result = runner.run(stimulus)[0].u_lp
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../runners.py", line 254, in run
+    this_state = self.step(y_t,
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../runners.py", line 190, in step
+    torch_u_t = self.model(
+  File "/opt/conda/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1186, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/workspace/one_more_dir/one_more_dir/contextual_frogs/experimental/./../models.py", line 176, in forward
+    x = self.input_layer(x)
+  File "/opt/conda/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1186, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/opt/conda/lib/python3.8/site-packages/torch/nn/modules/linear.py", line 114, in forward
+    return F.linear(input, self.weight, self.bias)
+KeyboardInterrupt
