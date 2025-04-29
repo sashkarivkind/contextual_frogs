@@ -1,0 +1,17 @@
+./../runners.py:177: RuntimeWarning: invalid value encountered in multiply
+  model_input = self.k*x_tm1
+./../dsp_utils.py:9: RuntimeWarning: invalid value encountered in double_scalars
+  self.state = 1./self.tau*x + (1-1./self.tau)*self.state
+/scratch/ar2342/miconda3/envs/eb_hyperacuity3/lib/python3.9/site-packages/scipy/optimize/_numdiff.py:576: RuntimeWarning: invalid value encountered in subtract
+  df = fun(x) - f0
+at minimum 0.2376 accepted 1  with params [-4.5   0.4   0.05  1.  ]
+at minimum 0.6133 accepted 1  with params [-4.40807198  0.31756351  0.5         0.74807017]
+at minimum 1.1657 accepted 1  with params [-4.09312285  0.756834    0.5         1.1       ]
+at minimum 1.1549 accepted 1  with params [-4.02310066  0.64247938  0.31539701  1.1       ]
+at minimum 0.4542 accepted 1  with params [-4.51782975  0.73509093  0.28568459  1.1       ]
+at minimum 0.0904 accepted 1  with params [-4.93350629  0.43938074  0.30545253  0.72944002]
+at minimum 0.2005 accepted 1  with params [-5.18516686  0.53769153  0.41638274  0.97331271]
+at minimum 0.1153 accepted 1  with params [-4.88501492  0.32476191  0.16558885  0.88770531]
+at minimum 0.2997 accepted 1  with params [-5.15186715  0.3908863   0.41641386  1.1       ]
+at minimum 0.1402 accepted 1  with params [-5.41584995  0.85639937  0.49539759  1.00591741]
+at minimum 0.7132 accepted 1  with params [-5.42598436  0.99        0.49999951  1.09999939]

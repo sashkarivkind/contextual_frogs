@@ -85,6 +85,7 @@ class ParallelMLP(nn.Module, ModelForRunner):
 class MLP(nn.Module, ModelForRunner):
     def __init__(self, n_inputs=None, n_hidden=None, n_outs=None, n_layers=1, nl='tanh', en_bias=True, prescaling=None, main_gain=None,
                  b_low=None, b_high=None, first_layer_init='default', skip_gain=None, first_layer_weights_trainable=False, out_layer_init='default',
+                 post_activation_bias=None, post_activation_bias_scale=1,
                  info=None):
         super(MLP, self).__init__()
         
@@ -155,6 +156,21 @@ class MLP(nn.Module, ModelForRunner):
             nn.Linear(n_hidden, n_hidden, bias=en_bias) for _ in range(n_layers - 1)
         ])
 
+        
+        if post_activation_bias is not None:
+            if post_activation_bias == 'per_neuron':
+                self.post_activation_bias = nn.ParameterList([nn.Parameter(torch.zeros(n_hidden)) for _ in range(n_layers)])
+            elif post_activation_bias == 'per_layer':
+                self.post_activation_bias = nn.ParameterList([nn.Parameter(torch.zeros(1)) for _ in range(n_layers)])
+            else:
+                raise ValueError('Unknown post_activation_bias')
+        else:
+            self.post_activation_bias = None
+
+        post_activation_bias_scale = torch.tensor(post_activation_bias_scale, dtype=torch.float32, requires_grad=False)
+        self.register_buffer('post_activation_bias_scale', post_activation_bias_scale)
+
+
         self.output_layer = nn.Linear(n_hidden, n_outs, bias=en_bias)
 
         if out_layer_init == 'ones':
@@ -176,9 +192,14 @@ class MLP(nn.Module, ModelForRunner):
         x = self.input_layer(x)
         x = self.activation(x)
 
-        for layer in self.hidden_layers:
+        if self.post_activation_bias is not None:
+            x = x + self.post_activation_bias[0] * self.post_activation_bias_scale
+
+        for l, layer in enumerate(self.hidden_layers):
             x = layer(x)
             x = self.activation(x)
+            if self.post_activation_bias is not None:
+                x = x + self.post_activation_bias[l+1]* self.post_activation_bias_scale
         
         x = self.main_gain  * self.output_layer(x) +  x_res  
         return x

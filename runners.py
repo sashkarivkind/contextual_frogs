@@ -11,26 +11,28 @@ from dsp_utils import LPF, parse_samples
 
 class Runner:
     def __init__(self,
-                 model=None,
-                 model_class=MLP,
-                 model_construct_args=None,
-                 optimizer=None,
-                 learning_rate = 1e-5,
-                 criterion='MSE',
-                 device=None,
-                 ic_param_file='model_parameters.pth',
-                 create_ic_param_file=True,
-                 tau_u=1.0,
-                 loud=True,
-                 model_type='torch',
-                 do_backprop=True,
-                 k=[0,1.,0],
-                 constancy_factor=None,
-                 enable_combo=False,
-                 sigma_noi = 0,
-                 test_vec=None,
-                 initial_state=None,
-                 apply_initial_state=True,
+                model=None,
+                model_class=MLP,
+                model_construct_args=None,
+                optimizer_class=None,
+                optimizer_opts={},
+                learning_rate = 1e-5,
+                criterion='MSE',
+                device=None,
+                ic_param_file='model_parameters.pth',
+                create_ic_param_file=True,
+                tau_u=1.0,
+                loud=True,
+                model_type='torch',
+                runner_method_alias = 'step_by_step',
+                do_backprop=True,
+                k=[0,1.,0],
+                constancy_factor=None,
+                enable_combo=False,
+                sigma_noi = 0,
+                test_vec=None,
+                initial_state=None,
+                apply_initial_state=True,
                 load_model_at_init=False,
                 save_model_at_init=True,
                 fb_on_nan=lambda x,y:0.,
@@ -56,7 +58,8 @@ class Runner:
         """
         if np.abs(sigma_noi)>1e-20:
             raise NotImplementedError
-        self.optimizer = optimizer
+        self.optimizer_class = optimizer_class if optimizer_class is not None else optim.SGD
+        self.optimizer_opts = optimizer_opts
         self.criterion = criterion
         if model_type == 'torch':
             self.parse_criterion()
@@ -88,9 +91,10 @@ class Runner:
         self.enable_combo = enable_combo
         self.auto_steps = auto_steps
         self.grad_less_steps = grad_less_steps
+        self.runner_method_alias = runner_method_alias
         # Initialize low-pass filter
         self.u_lp = LPF(tau=tau_u)
-        
+
         if test_vec is None:
             self.test_vec = None
         elif isinstance(test_vec, np.ndarray):  
@@ -112,8 +116,8 @@ class Runner:
 
         self.model.reset_state()
         if self.model_type == 'torch':
-            self.optimizer = optim.SGD(self.model.parameters(), 
-                            lr=self.learning_rate)
+            self.optimizer = self.optimizer_class(self.model.parameters(), 
+                            lr=self.learning_rate, **self.optimizer_opts)
             self.model.to(self.device)
             if self.ic_param_file is not None:
                 self.model.load_state_dict(torch.load(self.ic_param_file))
@@ -234,19 +238,37 @@ class Runner:
 
         return x_t 
     
-    def run(self,scenario,
-            do_return=True,
-            test_vec=None,
-            extra_measurements=None):
-        '''
-        full training session
-        test_vec: optional test vector
-        measurements: optional measurements
-        '''
+    def run(self, scenario, **kwargs):
+
+        # scenario = kwargs.pop('scenario', None)# todo: doublecheck interface
+        if scenario is None:
+            raise ValueError('scenario must be provided')
         if type(scenario) == list:
                 y = parse_samples(scenario)
         else:
             raise NotImplementedError #in future we will also support parsed lists
+        
+        kwargs['y'] = y
+
+        if self.runner_method_alias == 'step_by_step':
+            return self.run_step_by_step(**kwargs)
+        elif self.runner_method_alias == 'blackbox':
+            return self.run_black_box(**kwargs)
+        else:
+            raise ValueError(f'runner_method_alias: {self.runner_method_alias} not recognized')
+        
+    def run_black_box(self, y=None,
+            do_return=True,
+            test_vec=None,
+            extra_measurements=None):
+        
+        output = self.model(y) 
+        return output.records, self.model
+
+    def run_step_by_step(self,y=None,
+            do_return=True,
+            test_vec=None,
+            extra_measurements=None):
 
         this_state = self.initial_state
         for t, y_t in enumerate(y):
@@ -281,8 +303,9 @@ class Runner:
             self.reset(silent=True) #verbosing done below anyway, therefore 'silent' here
             if not silent:
                 print(f'running scenario: {name}')
-                
-            results[name], _model = self.run(scenario,test_vec=test_vec,extra_measurements=extra_measurements)
+
+            results[name], _model = self.run(scenario,test_vec=test_vec,
+                                             extra_measurements=extra_measurements)
         return results
     
 

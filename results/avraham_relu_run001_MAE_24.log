@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/homes/ar2342/one_more_dir/contextual_frogs/experimental/fit_single_v2.py", line 199, in <module>
+    this_data = data[:80,args.subject_id]
+IndexError: index 24 is out of bounds for axis 1 with size 24

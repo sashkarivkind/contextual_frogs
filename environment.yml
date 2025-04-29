@@ -1,4 +1,4 @@
-name: eb_hyperacuity3
+name: py_frogs
 channels:
   - pytorch
   - nvidia
@@ -223,4 +223,4 @@ dependencies:
   - zipp=3.21.0=py39h06a4308_0
   - zlib=1.2.13=h5eee18b_1
   - zstd=1.5.6=hc292b87_0
-prefix: /home/eldad/miniconda3/envs/eb_hyperacuity3
+prefix: py_frogs

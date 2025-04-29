@@ -25,9 +25,9 @@ def create_fitting_loss(data=None,stimulus=None,wrapped_model=None,pooling_fun='
     '''
 
     if pooling_fun == 'MSE':
-        pooling_fun = lambda x,y: np.mean((x-y)**2)
+        pooling_fun = lambda x,y: np.nanmean((x-y)**2)
     elif pooling_fun == 'MAE':
-        pooling_fun = lambda x,y: np.mean(np.abs(x-y))
+        pooling_fun = lambda x,y: np.nanmean(np.abs(x-y))
     elif isinstance(pooling_fun,types.FunctionType):
         pass
     else:

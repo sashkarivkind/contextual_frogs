@@ -1,0 +1,16 @@
+    1  ls
+    2  export HOME=/workspace
+    3  jupyter notebook
+    4  bg
+    5  cd one_more_dir/one_more_dir/contextual_frogs/experimental/
+    6  ls
+    7  ls hist1.txt 
+    8  less hist1.txt 
+    9  bash   ./sweep_subjects.sh --this_sweep_name sweek_with_shiftMAE_ python fit_single_v1.py  --param_config_id 2 --subject_id "_sweep_var" --max_iter 100 --fitting_loss  MAE --shift_model_out --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+   10  bash   ./sweep_subjects.sh --this_sweep_name sweek_with_shiftMAE_ python fit_single_v1.py  --param_config_id 2 --subject_id "_sweep_var" --max_iter 100 --fitting_loss  MAE --shift_model_out --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+   11  bg
+   12  pwd
+   13  ls ~
+   14  history
+   15  mkdir histories
+   16  history > histories/history_18March2025_docker_tm1.txt
