@@ -14,6 +14,7 @@ class Runner:
                 model=None,
                 model_class=MLP,
                 model_construct_args=None,
+                rnn_mode = False,
                 optimizer_class=None,
                 optimizer_opts={},
                 learning_rate = 1e-5,
@@ -44,17 +45,35 @@ class Runner:
         Initialize the Runner class.
 
         Args:
-            model: The machine learning model (PyTorch or NumPy-based).
-            optimizer: Optimizer used for training the model (e.g., PyTorch optimizer).
-            criterion: Loss function used for training.
-            device (str): Device to use ('cpu' or 'cuda').
+            model: The machine learning model (PyTorch or NumPy-based). By default is none and instead the model_class is used.
+            model_class: Class of the modelc constructor to be used (default is MLP).
+            model_construct_args (dict): Arguments for constructing the model.
+            optimizer_class: Class of the optimizer to be used (keep None for default SGD).
+            optimizer_opts: Options for the optimizer.
+            learning_rate: Learning rate for the optimizer.
+            criterion: Loss function used for training, or a known string, defaul MSE.
+            device (str): Device to use for pytorch. None to use default.
             ic_param_file (str): Path to the file with initial model parameters.
+            create_ic_param_file (bool): [todo; Not implemented] If True, creates a new file for initial model parameters.
             tau_u (float): Time constant for the low-pass filter.
             loud (bool): If True, prints reset messages.
             model_type (str): Type of model, either 'torch' or 'numpy'.
+            runner_method_alias (str): Alias for the runner method, either 'step_by_step' or 'blackbox'.
             do_backprop (bool): Whether to perform backpropagation during training.
-            k (float): Coefficient for model input scaling.
-            initial_state (Optional): Initial state of the system (used in `run`).
+            k (array of float): Coefficients for model input scaling.
+            constancy_factor (float): Factor for the constancy in the training. If not None, the training objective y is updated to: 
+                (1-constancy_factor)*y + constancy_factor*u_tm1.
+            enable_combo (bool): If True, enables the combo u+e.
+            sigma_noi (float): Noise level for the model. Not implemented yet.
+            test_vec (array): Test vector for evaluation.
+            initial_state (array): Initial state of the system.
+            apply_initial_state (bool): If True, applies the initial state.
+            load_model_at_init (bool): If True, loads the model parameters from the file at initialization.
+            save_model_at_init (bool): If True, saves the model parameters to the file at initialization.
+            fb_on_nan (function): Function to handle NaN values in the feedback.
+            auto_steps (int): Number of underhood automatic steps to take after each recorded step.
+            grad_less_steps (int): Number of steps to take without gradient updates after each recorded step.
+            info (dict): Additional information (not used); for interface consistency.
         """
         if np.abs(sigma_noi)>1e-20:
             raise NotImplementedError
@@ -79,6 +98,8 @@ class Runner:
         elif save_model_at_init:
             torch.save(self.model.state_dict(), self.ic_param_file)
         
+        self.rnn_mode = rnn_mode
+
         self.constancy_factor = constancy_factor
         self.tau_u = tau_u
         self.loud = loud
@@ -194,11 +215,16 @@ class Runner:
             torch_u_t = self.model(
                 model_input_
             )
-            u_t = torch_u_t.cpu().detach().numpy().squeeze()
+            foo = torch_u_t.cpu().detach().numpy().squeeze()
         elif self.model_type=='numpy':
-            u_t = self.model(model_input)
+            foo = self.model(model_input)
         else:
             raise ValueError
+        
+        if self.rnn_mode:
+            u_t, rnn_state = foo
+        else:
+            u_t = foo
             
         self.u_lp.step(u_t, silent=True)
 
