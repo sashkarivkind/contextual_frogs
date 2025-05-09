@@ -22,6 +22,7 @@ class Runner:
                 device=None,
                 ic_param_file='model_parameters.pth',
                 create_ic_param_file=True,
+                step_method_alias = 'step_vanilla',
                 tau_u=1.0,
                 loud=True,
                 model_type='torch',
@@ -115,6 +116,7 @@ class Runner:
         self.runner_method_alias = runner_method_alias
         # Initialize low-pass filter
         self.u_lp = LPF(tau=tau_u)
+        self.step_method_alias = step_method_alias
 
         if test_vec is None:
             self.test_vec = None
@@ -192,12 +194,28 @@ class Runner:
         
         return results
 
+    def step(self, *args, **kwargs):
+        '''
+        this method should be used for the stepwise evaluation of the model
+        it is a selector for step method
+        '''
+        if self.step_method_alias == 'step_vanilla':
+            return self.step_vanilla(*args, **kwargs)
+        elif self.step_method_alias == 'step_2stage':
+            return self.step_step_by_step(*args, **kwargs)
+        else:
+            raise ValueError(f'step_method_alias: {self.step_method_alias} not recognized')
+    
             
-    def step(self, y_t, x_tm1, extra_measurements=None, record=True):
+    def step_vanilla(self, y_t, state, extra_measurements=None, record=True):
         '''
         single step of continual learning 
         with optional training
         '''
+
+        #unpacking the state
+        x_tm1 = state[0]
+        rnn_state = state[1] if self.rnn_mode else None
 
         model_input = self.k*x_tm1
 
@@ -210,21 +228,23 @@ class Runner:
         if self.model_type=='torch':
             self.model.train()
             self.optimizer.zero_grad() 
-            # print('model_input',model_input) 
             model_input_ = torch.tensor(np.float32(model_input), requires_grad=False).to(self.device)
-            torch_u_t = self.model(
-                model_input_
-            )
-            foo = torch_u_t.cpu().detach().numpy().squeeze()
+
+            #todo:d decide if the rnn_state is pased externally or not
+            # model_input_ = (model_input_,) if not self.rnn_mode else (model_input_, rnn_state)
+            model_input_ = (model_input_,) #if not self.rnn_mode else (model_input_, rnn_state)
+            
+            model_output = self.model(*model_input_)
+
+            torch_u_t = model_output if not self.rnn_mode else model_output[0]
+            rnn_state = model_output[1] if self.rnn_mode else None
+
+            u_t = torch_u_t.cpu().detach().numpy().squeeze()
         elif self.model_type=='numpy':
-            foo = self.model(model_input)
+            u_t = self.model(model_input)
         else:
-            raise ValueError
+            raise ValueError(f'model_type: {self.model_type} not recognized')
         
-        if self.rnn_mode:
-            u_t, rnn_state = foo
-        else:
-            u_t = foo
             
         self.u_lp.step(u_t, silent=True)
 
@@ -262,8 +282,43 @@ class Runner:
             self.records.extra_results.append(
                 self.take_measurements(extra_measurements))
 
-        return x_t 
+        return (x_t, rnn_state) if self.rnn_mode else (x_t,)
     
+    def step_2stage(self, y_t, state, extra_measurements=None, record=True):
+        '''
+        supported for torch models only
+        '''
+        if self.model_type != 'torch':
+            raise ValueError('step_2stage is supported for torch models only')
+
+        y_tm1, c_tm1 = state
+
+        #posterior probabilities prediction, w/o observing y_t:
+        r_tm1 = r_model(y_tm1) if y_tm1 is not None else None
+        c_t = c_model(r_tm1 if r_tm1 is not None else c_tm1)
+        u_t = x_model(c_t)
+        #autoencoder training step (responsibilities)
+        r_t = r_model(y_t)
+        y_t_hat = x_model(r_t)
+        loss_ae = criterion_ae(y_t_hat, y_t)
+        loss_ae.backward()
+        optimizer_ae.step() #training x_model and r_model
+        #filtering step (b): update; todo, where we locate this step, here or before the AE step
+        r_tm1_ = r_model(y_tm1)
+        c_t_ = c_model(r_tm1_)
+        u_t_ = x_model(c_t_)
+        loss_pred = criterion_pred(u_t_, y_t)
+        loss_pred.backward()
+        optimizer_pred.step() #training c_model
+
+        #taking records #todo: refactor to avoid code duplication
+        if record:
+            self.records.u.append(u_t)
+            self.records.u_lp.append(self.u_lp.state)
+
+        #returning the state
+        return (y_t, c_t)
+
     def run(self, scenario, **kwargs):
 
         # scenario = kwargs.pop('scenario', None)# todo: doublecheck interface

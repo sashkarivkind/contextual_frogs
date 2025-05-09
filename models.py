@@ -122,10 +122,22 @@ class MLP(nn.Module, ModelForRunner):
         self.return_post_acts = return_post_acts
         # build layers
         self.layers = nn.ModuleList()
+        if b_low is None and b_high is not None:
+            b_low = -b_high
         in_bias = en_bias or (b_low is not None and b_high is not None)
         inp = nn.Linear(n_inputs, n_hidden, bias=in_bias)
         _init_linear(inp, first_layer_init)
         inp.weight.requires_grad = first_layer_weights_trainable
+
+        
+
+        # if custom_first_bias:
+        #     bias_values = torch.linspace(b_low, b_high, n_hidden)
+        #     with torch.no_grad():
+        #         self.input_layer.bias.copy_(bias_values)
+        #     self.input_layer.bias.requires_grad = False
+
+
         if b_low is not None and b_high is not None:
             bias_vals = torch.linspace(b_low, b_high, n_hidden)
             with torch.no_grad(): inp.bias.copy_(bias_vals)
@@ -148,6 +160,8 @@ class MLP(nn.Module, ModelForRunner):
         self.output_layer = nn.Linear(n_hidden, n_outs, bias=en_bias)
         _init_linear(self.output_layer, out_layer_init)
 
+        self.full_layer_list = self.layers + nn.ModuleList([self.output_layer])
+
     def _pre_activation(self, idx, x):
         return self.layers[idx](x)
 
@@ -168,6 +182,9 @@ class MLP(nn.Module, ModelForRunner):
             return out, post_acts
         else:
             return out
+        
+    def reset_state(self):
+        pass
 
 
 # Utility for linear layer initialization
@@ -188,6 +205,7 @@ class SingleStepRNN(MLP):
         self,
         *args,
         recurrence_mask=None,
+        recurrence_init=None,
         **kwargs
     ):
         """
@@ -211,11 +229,11 @@ class SingleStepRNN(MLP):
             raise ValueError(f"recurrence_mask must be length {L}")
         # store mask
         self.recurrence_mask = torch.tensor(recurrence_mask, dtype=torch.bool)
-
+        self.recurrence_init = recurrence_init
         hidden_size = self.layers[0].out_features
         # one U matrix per layer
         self.U_mats = nn.ParameterList([
-            nn.Parameter(torch.eye(hidden_size)) if self.recurrence_mask[i] else None
+            nn.Parameter(self._init_recurrence((hidden_size,hidden_size))) if self.recurrence_mask[i] else None
             for i in range(L)
         ])
         self.reset_state()
@@ -223,6 +241,27 @@ class SingleStepRNN(MLP):
     def reset_state(self):
         # clear previous post-activations
         self.prev_postacts = [None] * len(self.layers)
+
+    def _init_recurrence(self, size):
+        s = size[0] 
+        if self.recurrence_init is None:
+            return torch.zeros(size)
+        elif isinstance(self.recurrence_init, torch.Tensor):
+            if self.recurrence_init.shape != size:
+                raise ValueError(f"recurrence_init tensor must be same shape as layer size {size}")
+            return self.recurrence_init
+        elif isinstance(self.recurrence_init, np.ndarray):
+            if self.recurrence_init.shape != size:
+                raise ValueError(f"recurrence_init tensor must be same shape as layer size {size}")
+            return torch.tensor(self.recurrence_init, dtype=torch.float32)
+        elif self.recurrence_init == 'uniform':
+            return (2*torch.rand(size)-1)/np.sqrt(s)
+        elif self.recurrence_init == 'normal':
+            return torch.randn(size)/np.sqrt(s)
+        elif self.recurrence_init == 'zeros':
+            return torch.zeros(size)
+        else:
+            raise ValueError(f"Unknown recurrence_init: {self.recurrence_init}")
 
     def _pre_activation(self, idx, x):
         # base linear
@@ -239,12 +278,12 @@ class SingleStepRNN(MLP):
         return out, post_acts
 
 
-class Legacy_MLP(nn.Module, ModelForRunner):
+class LegacyMLP(nn.Module, ModelForRunner):
     def __init__(self, n_inputs=None, n_hidden=None, n_outs=None, n_layers=1, nl='tanh', en_bias=True, prescaling=None, main_gain=None,
                  b_low=None, b_high=None, first_layer_init='default', skip_gain=None, first_layer_weights_trainable=False, out_layer_init='default',
                  post_activation_bias=None, post_activation_bias_scale=1,
                  info=None):
-        super(Legacy_MLP, self).__init__()
+        super(LegacyMLP, self).__init__()
         
 
         if prescaling is not None:
@@ -329,7 +368,7 @@ class Legacy_MLP(nn.Module, ModelForRunner):
 
 
         self.output_layer = nn.Linear(n_hidden, n_outs, bias=en_bias)
-        self.layers  = nn.ModuleList([self.input_layer]) + self.hidden_layers #for compatibility with tester
+        self.full_layer_list  = nn.ModuleList([self.input_layer]) + self.hidden_layers + nn.ModuleList([self.output_layer]) #for compatibility with tester
 
         if out_layer_init == 'ones':
             nn.init.constant_(self.output_layer.weight, 1.0)
@@ -599,7 +638,7 @@ if __name__ == "__main__":
                         'out_layer_init':'zeros', 'post_activation_bias':'per_neuron'}))
     for pos_args, kwargs in test_cases:
         print(f"Testing with args: {pos_args}, kwargs: {kwargs}")
-        legacy = Legacy_MLP(*pos_args, **kwargs)
+        legacy = LegacyMLP(*pos_args, **kwargs)
         new = MLP(*pos_args, **kwargs)
         out1 = legacy(x)
         out2 = new(x)
@@ -611,7 +650,7 @@ if __name__ == "__main__":
     # 2) Skip connection functional tests
     # 2a) per-input skip_gain
     net_skip_in = MLP(3,5,1, skip_gain=[1,2,3])
-    net_skip_in.layers[0].weight.data.zero_()
+    net_skip_in.full_layer_list[0].weight.data.zero_()
     net_skip_in.output_layer.bias.data.zero_()
     net_skip_in.output_layer.weight.data.zero_()
     x3 = torch.tensor([[1.,2.,3.],[0.1,0.1,0.1]])
@@ -632,9 +671,9 @@ if __name__ == "__main__":
     # assert torch.allclose(out_out, expected_out), "Per-output skip failed"
 
     # 2c) scalar skip_gain
-    for construct in [Legacy_MLP, MLP]:
+    for construct in [LegacyMLP, MLP]:
         net_skip_sc = construct(4,5,1, skip_gain=0.5)
-        net_skip_sc.layers[0].weight.data.zero_()
+        net_skip_sc.full_layer_list[0].weight.data.zero_()
         net_skip_sc.output_layer.bias.data.zero_()
         net_skip_sc.output_layer.weight.data.zero_()
         x5 = torch.ones(2,4)
@@ -646,10 +685,10 @@ if __name__ == "__main__":
     # 2d) nonlinearity test. Loop over relu and tanh. Ensure that both models produce the same output.
     for nl in ['relu', 'tanh']:
         outputs = []
-        for construct in [Legacy_MLP, MLP]:
+        for construct in [LegacyMLP, MLP]:
             net = construct(2,5,1, nl=nl)
-            net.layers[0].weight.data.fill_(1.0)
-            net.layers[0].bias.data.zero_()
+            net.full_layer_list[0].weight.data.fill_(1.0)
+            net.full_layer_list[0].bias.data.zero_()
             net.output_layer.weight.data.fill_(1.0)
             net.output_layer.bias.data.zero_()
             x6 = torch.tensor([[1.,2.]])
@@ -659,10 +698,10 @@ if __name__ == "__main__":
         print(f"Nonlinearity tests passed, for {construct.__name__} with nl={nl}.")
 
     # 3) Prescaling + main_gain + activation
-    for construct in [Legacy_MLP, MLP]:
+    for construct in [LegacyMLP, MLP]:
         net_pm = construct(2,11,1, prescaling=[2,3], main_gain=[2], skip_gain=0, nl='relu')
-        net_pm.layers[0].weight.data.fill_(1.0)
-        net_pm.layers[0].bias.data.zero_()
+        net_pm.full_layer_list[0].weight.data.fill_(1.0)
+        net_pm.full_layer_list[0].bias.data.zero_()
         net_pm.output_layer.weight.data.fill_(1.0)
         net_pm.output_layer.bias.data.zero_()
         x2 = torch.tensor([[1.,1.],[2.,0.]])
@@ -687,5 +726,33 @@ if __name__ == "__main__":
     out2, _ = rnn(x1)
     assert (out2 > out1).all(), "Recurrence did not accumulate"
     print("Recurrence tests passed.")
+
+    #testing some more complex configurations
+    w = 1
+    skip = 0.5
+    model_construct_args =  dict(n_inputs = 4,
+                          n_hidden = 5*4*512,
+                          n_outs = 1,
+                          en_bias = False,
+                         b_high=3, first_layer_init='ones',
+                        first_layer_weights_trainable = True,
+                        out_layer_init='zeros',
+                          nl = lambda : OneOverSqr(w=w), skip_gain= skip)
+    
+    outs = []
+    for construct in [LegacyMLP, MLP]:
+        print(f"Testing {construct.__name__} with OneOverSqr")
+        model = construct(**model_construct_args)
+        model.full_layer_list[0].weight.data.fill_(1.0)
+        model.full_layer_list[0].bias.data.zero_()
+        model.full_layer_list[1].weight.data.fill_(1.0)
+        # model.layers[-1].bias.data.zero_()
+        x = torch.ones(2,4)
+        out = model(x)
+        # print(f'output for {construct.__name__}: {out}')
+        outs.append(out)
+    assert torch.allclose(outs[0], outs[1]), f"OneOverSqr test failed."
+    print("OneOverSqr tests passed.")
+            
 
     print("All tests passed successfully.")
