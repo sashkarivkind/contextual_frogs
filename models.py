@@ -4,6 +4,10 @@ import torch.nn.functional as F
 import numpy as np
 
 def nl_selector(nl):
+
+    if nl is None:
+        nl = nn.Identity
+
     if isinstance(nl,str):
         if nl == 'relu':
             nl = nn.ReLU
@@ -13,8 +17,8 @@ def nl_selector(nl):
             nl = nn.Tanh
         elif nl == 'sigmoid':
             nl = nn.Sigmoid
-        elif nl is None:
-            nl = lambda x: x
+        # elif nl is None:
+        #     nl = lambda x: x
         else:
             raise ValueError('unkonow nonlinearity')
     return nl

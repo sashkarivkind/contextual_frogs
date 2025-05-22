@@ -157,6 +157,40 @@ elif args.param_config_id == 4:
     custom_param_mappings = [{'cathegory':'runner','param_name':'learning_rate',
                             'fun': lambda x: 10.**x['normalized_log_lr']},]
 
+
+elif args.param_config_id == 41:
+
+    x0 = [-4.5,
+          0.4,
+          0.05, 
+          1.0, 
+          0]
+    bounds = [(-6,-3),(-0.1,0.99), (0.01,0.5), (0.5,1.1), (0,4)]
+
+    fixed_params['model'] =  dict(n_inputs = 4,
+                          n_hidden = 5*4*512,
+                          n_outs = 1,
+                          en_bias = False,
+                         first_layer_init='uniform_unity',
+                        first_layer_weights_trainable = True,
+                        out_layer_init='zeros',
+                          nl = 'relu')        
+
+    fixed_params['runner'] = {'criterion':'MSE', 'k':[0,0,0,1],  'sigma_noi':0.0, 'tau_u':1,
+                            'save_model_at_init':False, 'ic_param_file':None, 'enable_combo':True}
+
+    optim_param_mapping= [('custom','normalized_log_lr'),
+                        ('model','skip_gain'),                      
+                        ('model','b_high'),                      
+                        ('postprocessing','scale'),
+                        ('custom','log_wdecay_rate')
+                        ]
+    custom_param_mappings = [{'cathegory':'runner','param_name':'learning_rate',
+                            'fun': lambda x: 10.**x['normalized_log_lr']},
+                            {'cathegory':'runner','param_name':'optimizer_opts',
+                            'fun': lambda x: {'weight_decay': 10.**x['log_wdecay_rate']} },
+                            ]
+
 elif args.param_config_id == 5:
 
     x0 = [-4.5,0.4,0.05, 40]

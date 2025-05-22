@@ -96,3 +96,10 @@ done
 #   ./sweep_subjects.sh --this_sweep_name test_steps_etc --min 3 --max 12 \
 #       python --subject_id "_sweep_var" --max_iter 2 --file_name_prefix "_sweep_name" \
 #       '>' "${_sweep_name}${_sweep_var}.log" '2>&1'
+
+# MORE EXAMPLES:
+#   280  bash   ./sweep_subjects.sh --min 1 --max 8 --this_sweep_name coin_evoked_run001_MAE_ python fit_single_v2.py  --param_config_id 4 --experimental_data coin --paradigm evoked   --subject_id "_sweep_var" --max_iter 10 --fitting_loss  MAE --shift_model_out --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+#   281  bash   ./sweep_subjects.sh --min 1 --max 8 --this_sweep_name coin_evoked_run001_MAE_ python fit_single_v2.py  --param_config_id 4 --experimental_data coin --paradigm evoked   --subject_id "_sweep_var" --max_iter 10 --fitting_loss  MAE  --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+#   282  bash   ./sweep_subjects.sh --min 1 --max 8 --this_sweep_name coin_evoked_run002_MAE_ python fit_single_v2.py  --param_config_id 4 --experimental_data coin --paradigm evoked   --subject_id "_sweep_var" --max_iter 150 --fitting_loss  MAE  --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+
+# bash   ./sweep_subjects.sh --min 1 --max 2 --this_sweep_name coin_evoked_run021_MSE_ python fit_single_v2.py  --param_config_id 41 --experimental_data coin --paradigm evoked   --subject_id "_sweep_var" --max_iter 2 --fitting_loss  MSE  --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'

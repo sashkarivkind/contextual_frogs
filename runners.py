@@ -14,11 +14,14 @@ class Runner:
                 model=None,
                 model_class=MLP,
                 model_construct_args=None,
+                models=None,
                 rnn_mode = False,
+                optimizers=None,
                 optimizer_class=None,
                 optimizer_opts={},
                 learning_rate = 1e-5,
                 criterion='MSE',
+                criteria = None,
                 device=None,
                 ic_param_file='model_parameters.pth',
                 create_ic_param_file=True,
@@ -78,13 +81,21 @@ class Runner:
         """
         if np.abs(sigma_noi)>1e-20:
             raise NotImplementedError
-        self.optimizer_class = optimizer_class if optimizer_class is not None else optim.SGD
-        self.optimizer_opts = optimizer_opts
-        self.criterion = criterion
-        if model_type == 'torch':
-            self.parse_criterion()
         
-        self.model = model_class(**model_construct_args) if model is None else model            
+        self.models = models
+        self.optimizers = optimizers
+        self.criteria = criteria
+
+        if optimizers is None:
+            self.optimizer_class = optimizer_class if optimizer_class is not None else optim.SGD
+            self.optimizer_opts = optimizer_opts
+            self.criterion = criterion
+
+        if criteria is None:
+            if model_type == 'torch':
+                self.parse_criterion()
+        if models is None:
+            self.model = model_class(**model_construct_args) if model is None else model            
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if device is None else device    
 
         if apply_initial_state:   
@@ -94,13 +105,33 @@ class Runner:
             
         self.ic_param_file = ic_param_file
             
-        if load_model_at_init:
-            self.model.load_state_dict(torch.load(self.ic_param_file))
-        elif save_model_at_init:
-            torch.save(self.model.state_dict(), self.ic_param_file)
-        
-        self.rnn_mode = rnn_mode
+        # if load_model_at_init:
+        #     self.model.load_state_dict(torch.load(self.ic_param_file))
+        # elif save_model_at_init:
+        #     torch.save(self.model.state_dict(), self.ic_param_file)
 
+        if load_model_at_init:
+            # if user supplied a single model, load it…
+            if self.models is None:
+                self.model.load_state_dict(torch.load(self.ic_param_file))
+           # …otherwise load each sub‐model under a separate file suffix
+            else:
+                for name, m in vars(self.models).items():
+                    path = f"{self.ic_param_file}_{name}.pth"
+                    m.load_state_dict(torch.load(path))
+        elif save_model_at_init:
+            # save the standalone model…
+            if self.models is None:
+                torch.save(self.model.state_dict(), self.ic_param_file)
+            # …or save each sub‐model to its own file
+            else:
+                for name, m in vars(self.models).items():
+                    path = f"{self.ic_param_file}_{name}.pth"
+                    torch.save(m.state_dict(), path)
+        
+
+        self.rnn_mode = rnn_mode
+        self.optimizers = optimizers #TODO: add enhance support for multiple optimizers
         self.constancy_factor = constancy_factor
         self.tau_u = tau_u
         self.loud = loud
@@ -137,13 +168,26 @@ class Runner:
         if self.loud and not silent:
             print('model reset')
 
-        self.model.reset_state()
+        if self.models is None:
+            self.model.reset_state()
+        else:
+            for name, m in vars(self.models).items():
+                m.reset_state()
+
         if self.model_type == 'torch':
-            self.optimizer = self.optimizer_class(self.model.parameters(), 
-                            lr=self.learning_rate, **self.optimizer_opts)
-            self.model.to(self.device)
-            if self.ic_param_file is not None:
-                self.model.load_state_dict(torch.load(self.ic_param_file))
+            if self.optimizers is None: #checking that there is no provided optimizers
+                self.optimizer = self.optimizer_class(self.model.parameters(), 
+                                lr=self.learning_rate, **self.optimizer_opts)
+                
+            if self.models is None: #checking that there is no provided models
+                self.model.to(self.device)
+                if self.ic_param_file is not None:
+                    self.model.load_state_dict(torch.load(self.ic_param_file))
+            else:
+                for name, m in vars(self.models).items():
+                    m.to(self.device)
+                    path = f"{self.ic_param_file}_{name}.pth"
+                    m.load_state_dict(torch.load(path))
 
         self.records = SimpleNamespace(u=[], u_lp=[], test_output=[], extra_results=[])
         self.block_training_next_step = False
@@ -169,7 +213,12 @@ class Runner:
                 test_output = self.model(self.k_*self.test_vec)
                 self.records.test_output.append(test_output.cpu().detach().numpy())
     
-    def opt_(self, u_t, y_t, constancy_factor=None, u_tm1=None):
+    def opt_(self, u_t, y_t, constancy_factor=None, u_tm1=None,weight_decay_only=False):
+            
+            if weight_decay_only:
+                self.optimizer.zero_grad()
+                self.optimizer.step()
+                return
             
             if constancy_factor is not None:
                 y_t = (1-constancy_factor)*y_t + constancy_factor*u_tm1
@@ -177,7 +226,13 @@ class Runner:
             y_t_ = torch.tensor([float(y_t)], requires_grad=False).to(self.device)
             loss = self.criterion(u_t, y_t_)
             loss.backward()
-            self.optimizer.step()
+
+            #TODO: ensure optimiser is packed into a list in all cases and remove this check
+            if self.optimizers is not None: 
+                for optimizer in self.optimizers:
+                    optimizer.step()
+            else:
+                self.optimizer.step()
 
     def take_measurements(self, extra_measurements):
         '''
@@ -202,7 +257,7 @@ class Runner:
         if self.step_method_alias == 'step_vanilla':
             return self.step_vanilla(*args, **kwargs)
         elif self.step_method_alias == 'step_2stage':
-            return self.step_step_by_step(*args, **kwargs)
+            return self.step_2stage(*args, **kwargs)
         else:
             raise ValueError(f'step_method_alias: {self.step_method_alias} not recognized')
     
@@ -227,10 +282,16 @@ class Runner:
         # applying model to the previous state; previous state relies on the previous sensory feedback (AKA y_{t-1})
         if self.model_type=='torch':
             self.model.train()
-            self.optimizer.zero_grad() 
+
+            if self.optimizers is not None:
+                for optimizer in self.optimizers:
+                    optimizer.zero_grad()
+            else:
+                self.optimizer.zero_grad()
+                
             model_input_ = torch.tensor(np.float32(model_input), requires_grad=False).to(self.device)
 
-            #todo:d decide if the rnn_state is pased externally or not
+            #TODO:d decide if the rnn_state is pased externally or not
             # model_input_ = (model_input_,) if not self.rnn_mode else (model_input_, rnn_state)
             model_input_ = (model_input_,) #if not self.rnn_mode else (model_input_, rnn_state)
             
@@ -265,6 +326,7 @@ class Runner:
                 self.opt_(torch_u_t,y_t,
                           **({'constancy_factor': self.constancy_factor, 'u_tm1':torch_u_tm1} if self.constancy_factor is not None else {}))                 
         else:
+            self.opt_(None,None,weight_decay_only=True)
             err_t = np.zeros_like(self.u_lp.state)
 
         self.block_training_next_step = not cond #todo: currently overriden at the top level. fix this (either remove here or check why needed)
@@ -286,38 +348,139 @@ class Runner:
     
     def step_2stage(self, y_t, state, extra_measurements=None, record=True):
         '''
-        supported for torch models only
+        Two-stage continual learning step for rcx models.
+
+        Args:
+            y_t: current observation (float) or None if missing
+            state: tuple (y_{t-1}, c_{t-1})
+            extra_measurements: list of callables for diagnostics
+            record: whether to record outputs
+
+        Returns:
+            new state (y_t, c_t)
         '''
         if self.model_type != 'torch':
             raise ValueError('step_2stage is supported for torch models only')
 
+        # Unpack previous state
         y_tm1, c_tm1 = state
+        # print('debug:   y_tm1:    ',y_tm1)
+        # if np.isnan(y_tm1):
+        #     y_tm1 = None
+        # if np.isnan(y_t):
+        #     y_t = None
 
-        #posterior probabilities prediction, w/o observing y_t:
-        r_tm1 = r_model(y_tm1) if y_tm1 is not None else None
+        # ctm1 to tensor
+        if not isinstance(c_tm1, torch.Tensor):
+            c_tm1_tensor = torch.tensor(c_tm1) #TODO: doublecheck for redundancy
+        else:
+            c_tm1_tensor = c_tm1
+        c_tm1_tensor = c_tm1_tensor.to(self.device)
+
+        c_tm1 = c_tm1_tensor
+
+        # Aliases
+        r_model = self.models.r_model
+        c_model = self.models.c_model
+        x_model = self.models.x_model
+        optim_ae = self.optimizers.optimizer_ae
+        optim_pred = self.optimizers.optimizer_pred
+        crit_ae = self.criteria.ae
+        crit_pred = self.criteria.pred
+
+        # Stage 1: Predict responsibilities, context, and output
+        if not np.isnan(y_tm1):
+            y_tm1_tensor = torch.tensor([[float(y_tm1)]], device=self.device)
+            r_tm1 = r_model(y_tm1_tensor)
+        else:
+            r_tm1 = None
         c_t = c_model(r_tm1 if r_tm1 is not None else c_tm1)
-        u_t = x_model(c_t)
-        #autoencoder training step (responsibilities)
-        r_t = r_model(y_t)
-        y_t_hat = x_model(r_t)
-        loss_ae = criterion_ae(y_t_hat, y_t)
-        loss_ae.backward()
-        optimizer_ae.step() #training x_model and r_model
-        #filtering step (b): update; todo, where we locate this step, here or before the AE step
-        r_tm1_ = r_model(y_tm1)
-        c_t_ = c_model(r_tm1_)
-        u_t_ = x_model(c_t_)
-        loss_pred = criterion_pred(u_t_, y_t)
-        loss_pred.backward()
-        optimizer_pred.step() #training c_model
+        u_t_tensor = x_model(c_t)
+        u_t = u_t_tensor.cpu().detach().numpy().squeeze()
 
-        #taking records #todo: refactor to avoid code duplication
+        # Update low-pass filter
+        self.u_lp.step(u_t, silent=True)
+
+        # Stage 2a: Autoencoder update (train r_model + x_model)
+        if not np.isnan(y_t):
+            y_t_tensor = torch.tensor([[float(y_t)]], device=self.device)
+            optim_ae.zero_grad()
+            r_t = r_model(y_t_tensor)
+            y_hat = x_model(r_t)
+            loss_ae = crit_ae(y_hat, y_t_tensor)
+            loss_ae.backward()
+            optim_ae.step()
+
+        # Stage 2b: Predictor update (train c_model)
+        if not np.isnan(y_t) and not np.isnan(y_tm1):
+            y_tm1_tensor = torch.tensor([[float(y_tm1)]], device=self.device)
+            optim_pred.zero_grad()
+            r_tm1_pred = r_model(y_tm1_tensor)
+            c_pred = c_model(r_tm1_pred)
+            u_pred = x_model(c_pred)
+            loss_pred = crit_pred(u_pred, y_t_tensor)
+            loss_pred.backward()
+            optim_pred.step()
+
+        # Record outputs and diagnostics
         if record:
             self.records.u.append(u_t)
             self.records.u_lp.append(self.u_lp.state)
+            self.records.extra_results.append(self.take_measurements(extra_measurements))
 
-        #returning the state
         return (y_t, c_t)
+
+    
+    # def step_2stage(self, y_t, state, extra_measurements=None, record=True):
+    #     '''
+    #     supported for torch models only
+    #     '''
+    #     if self.model_type != 'torch':
+    #         raise ValueError('step_2stage is supported for torch models only')
+
+    #     x_tm1, c_tm1 = state
+
+    #     if self.k is not None:
+    #         raise NotImplementedError('k is not supported in step_2stage')
+    #     else:
+    #         y_tm1 = x_tm1
+
+    #     #aliases
+    #     r_model, c_model, x_model = self.models.r_model, self.models.c_model, self.models.x_model
+    #     optimizer_ae, optimizer_pred = self.optimizers.optimizer_ae, self.optimizers.optimizer_pred
+    #     criterion_ae, criterion_pred = self.criteria.ae, self.criteria.pred
+
+    #     #posterior probabilities prediction, w/o observing y_t:
+    #     r_tm1 = r_model(y_tm1) if y_tm1 is not None else None #y_tm1 is None in channel trials
+    #     c_t = c_model(r_tm1 if r_tm1 is not None else c_tm1)
+    #     u_t = x_model(c_t)
+
+    #     #autoencoder training step (responsibilities)
+    #     if y_t is not None:
+    #         r_t = r_model(y_t)
+    #         y_t_hat = x_model(r_t)
+
+    #         loss_ae = criterion_ae(y_t_hat, y_t)
+    #         loss_ae.backward()
+    #         optimizer_ae.step() #training x_model and r_model
+
+    #     #filtering step (b): update; TODO, where we locate this step, here or before the AE step
+    #     if y_t is not None and y_tm1 is not None:
+    #         r_tm1_ = r_model(y_tm1)
+    #         c_t_ = c_model(r_tm1_)
+    #         u_t_ = x_model(c_t_)
+
+    #         loss_pred = criterion_pred(u_t_, y_t)
+    #         loss_pred.backward()
+    #         optimizer_pred.step() #training c_model
+
+    #     #taking records #todo: refactor to avoid code duplication
+    #     if record:
+    #         self.records.u.append(u_t)
+    #         self.records.u_lp.append(self.u_lp.state)
+
+    #     #returning the state
+    #     return (y_t, c_t)
 
     def run(self, scenario, **kwargs):
 
@@ -372,7 +535,7 @@ class Runner:
             self.block_training_next_step = False #todo - fix this           
             
         if do_return:
-            return copy(self.records), self.model
+            return copy(self.records), (self.model if self.models is None else self.models)
         
     def run_multiple(self,playlist,             
             test_vec=None,

@@ -1,7 +1,15 @@
 import numpy as np
 import types
 
-def create_fitting_loss(data=None,stimulus=None,wrapped_model=None,pooling_fun='MSE',datapoint_mapping=None,weighting=None, nan_replacement=1e20):
+def create_fitting_loss(data=None,
+                        stimulus=None,
+                        wrapped_model=None,
+                        pooling_fun='MSE',
+                        datapoint_mapping=None,
+                        weighting=None,
+                        penalize_nans_in_data=False,
+                        penalize_nans_in_model_output=True, 
+                        nan_replacement=1e20):
 
     '''
     Create a loss function for fitting a model to data.
@@ -51,7 +59,9 @@ def create_fitting_loss(data=None,stimulus=None,wrapped_model=None,pooling_fun='
 
         loss = pooling_fun(data_, model_output_)
 
-        if np.isnan(loss) and nan_replacement is not None:
+        if nan_replacement is not None and \
+            (np.isnan(loss) or penalize_nans_in_data and np.isnan(data_).any() or \
+            penalize_nans_in_model_output and np.isnan(model_output_).any()):
             loss = nan_replacement
 
         return loss
