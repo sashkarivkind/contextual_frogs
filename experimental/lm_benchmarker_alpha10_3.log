@@ -1,0 +1,3 @@
+Vocab size: 141
+[Stage1-EN][Epoch 1][Step 500] EN val-acc: 0.2909, val-loss: 2.7073
+[Stage1-EN][Epoch 1][Step 1000] EN val-acc: 0.3148, val-loss: 2.5300

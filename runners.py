@@ -34,7 +34,7 @@ class Runner:
                 k=[0,1.,0],
                 constancy_factor=None,
                 enable_combo=False,
-                sigma_noi = 0,
+                noise_spec = {},
                 test_vec=None,
                 initial_state=None,
                 apply_initial_state=True,
@@ -44,6 +44,7 @@ class Runner:
                 auto_steps=0,
                 grad_less_steps=0,
                 info=None, #not in use
+                sigma_noi = 0.0, #not in use
                 ):
         """
         Initialize the Runner class.
@@ -68,7 +69,10 @@ class Runner:
             constancy_factor (float): Factor for the constancy in the training. If not None, the training objective y is updated to: 
                 (1-constancy_factor)*y + constancy_factor*u_tm1.
             enable_combo (bool): If True, enables the combo u+e.
-            sigma_noi (float): Noise level for the model. Not implemented yet.
+            noise_spec (dict): the following keys are supported:
+                'noi_x' (float): Noise to be added to the model input (x).
+                'noi_u' (float): Noise to be added to the model output (u).
+                'noi_post_u' (float): Noise to be added to the output (u) after closing the loop. this component does not go into the feedback loop.
             test_vec (array): Test vector for evaluation.
             initial_state (array): Initial state of the system.
             apply_initial_state (bool): If True, applies the initial state.
@@ -79,9 +83,9 @@ class Runner:
             grad_less_steps (int): Number of steps to take without gradient updates after each recorded step.
             info (dict): Additional information (not used); for interface consistency.
         """
-        if np.abs(sigma_noi)>1e-20:
-            raise NotImplementedError
-        
+        if sigma_noi is not None and sigma_noi > 1e-100:
+            raise ValueError('sigma_noi is not supported anymore, use noise_spec instead')
+
         self.models = models
         self.optimizers = optimizers
         self.criteria = criteria
@@ -89,7 +93,8 @@ class Runner:
         if optimizers is None:
             self.optimizer_class = optimizer_class if optimizer_class is not None else optim.SGD
             self.optimizer_opts = optimizer_opts
-            self.criterion = criterion
+            
+        self.criterion = criterion
 
         if criteria is None:
             if model_type == 'torch':
@@ -160,6 +165,8 @@ class Runner:
         
         # Initialize records and states
         self.learning_rate = learning_rate
+
+        self.noise_spec = noise_spec
 
         # Reset the model and low-pass filter
         self.reset(silent=True)
@@ -273,7 +280,9 @@ class Runner:
         rnn_state = state[1] if self.rnn_mode else None
 
         model_input = self.k*x_tm1
-
+        if 'noi_x' in self.noise_spec:
+            model_input += self.noise_spec['noi_x'] * np.random.randn(*model_input.shape)
+                
         #hook for taking the first element of x_tm1 as u_tm1
         if self.constancy_factor is not None:
             u_tm1 = x_tm1[0]
@@ -306,6 +315,9 @@ class Runner:
         else:
             raise ValueError(f'model_type: {self.model_type} not recognized')
         
+
+        if 'noi_u' in self.noise_spec:
+            u_t += self.noise_spec['noi_u'] * np.random.randn(*u_t.shape)
             
         self.u_lp.step(u_t, silent=True)
 
@@ -315,6 +327,9 @@ class Runner:
         # target is y_t while and the  prediction which is based on the previous state: 
         cond = not np.isnan(y_t)
         if cond:
+            if 'noi_y' in self.noise_spec:
+                y_t += self.noise_spec['noi_y'] * np.random.randn(*y_t.shape)
+
             err_t = (y_t - self.u_lp.state)
             if self.do_backprop and not self.block_training_next_step:
                 self.opt_(torch_u_t,y_t,
@@ -337,9 +352,13 @@ class Runner:
                         y_t,
                         err_t]+([self.u_lp.state + err_t] if self.enable_combo else []))
 
+        if 'noi_post_u' in self.noise_spec:
+            n_post_u = self.noise_spec['noi_post_u'] * np.random.randn(*x_t.shape)
+        else:
+            n_post_u = 0.0
         if record:
-            self.records.u.append(u_t)
-            self.records.u_lp.append(self.u_lp.state)
+            self.records.u.append(u_t+n_post_u)
+            self.records.u_lp.append(self.u_lp.state+n_post_u)
 
             self.records.extra_results.append(
                 self.take_measurements(extra_measurements))

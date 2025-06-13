@@ -1,0 +1,98 @@
+Vocab size: 141
+[Stage1-EN][Epoch 1][Step 500] EN val-acc: 0.2963, val-loss: 2.6852
+[Stage1-EN][Epoch 1][Step 1000] EN val-acc: 0.3140, val-loss: 2.4996
+[Stage1-EN][Epoch 1][Step 1500] EN val-acc: 0.3333, val-loss: 2.4052
+[Stage1-EN][Epoch 1][Step 2000] EN val-acc: 0.3439, val-loss: 2.3426
+[Stage1-EN][Epoch 1][Step 2500] EN val-acc: 0.3636, val-loss: 2.2943
+[Stage1-EN][Epoch 1][Step 3000] EN val-acc: 0.3716, val-loss: 2.2535
+[Stage1-EN][Epoch 1][Step 3500] EN val-acc: 0.3772, val-loss: 2.2175
+[Stage1-EN][Epoch 1][Step 4000] EN val-acc: 0.3856, val-loss: 2.1847
+[Stage1-EN][Epoch 1][Step 4500] EN val-acc: 0.3917, val-loss: 2.1547
+[Stage1-EN][Epoch 1][Step 5000] EN val-acc: 0.3982, val-loss: 2.1272
+[Stage1-EN][Epoch 1][Step 5500] EN val-acc: 0.4032, val-loss: 2.1016
+[Stage1-EN][Epoch 1][Step 6000] EN val-acc: 0.4094, val-loss: 2.0778
+[Stage1-EN][Epoch 1][Step 6500] EN val-acc: 0.4153, val-loss: 2.0556
+[Stage1-EN][Epoch 1][Step 7000] EN val-acc: 0.4217, val-loss: 2.0346
+[Stage1-EN][Epoch 1][Step 7500] EN val-acc: 0.4268, val-loss: 2.0149
+[Stage1-EN][Epoch 1][Step 8000] EN val-acc: 0.4304, val-loss: 1.9963
+[Stage1-EN][Epoch 1][Step 8500] EN val-acc: 0.4347, val-loss: 1.9787
+[Stage1-EN][Epoch 1][Step 9000] EN val-acc: 0.4387, val-loss: 1.9621
+[Stage1-EN][Epoch 1][Step 9500] EN val-acc: 0.4438, val-loss: 1.9461
+[Stage1-EN][Epoch 1][Step 10000] EN val-acc: 0.4493, val-loss: 1.9310
+[Stage1-EN][Epoch 1][Step 10500] EN val-acc: 0.4530, val-loss: 1.9165
+[Stage1-EN][Epoch 1][Step 11000] EN val-acc: 0.4567, val-loss: 1.9028
+[Stage1-EN][Epoch 1][Step 11500] EN val-acc: 0.4601, val-loss: 1.8895
+[Stage1-EN][Epoch 1][Step 12000] EN val-acc: 0.4637, val-loss: 1.8767
+[Stage1-EN][Epoch 1][Step 12500] EN val-acc: 0.4667, val-loss: 1.8645
+[Stage1-EN][Epoch 1][Step 13000] EN val-acc: 0.4694, val-loss: 1.8527
+[Stage1-EN][Epoch 1][Step 13500] EN val-acc: 0.4729, val-loss: 1.8413
+[Stage1-EN][Epoch 1][Step 14000] EN val-acc: 0.4762, val-loss: 1.8303
+[Stage1-EN][Epoch 1][Step 14500] EN val-acc: 0.4795, val-loss: 1.8197
+[Stage1-EN][Epoch 1][Step 15000] EN val-acc: 0.4821, val-loss: 1.8094
+[Stage1-EN][Epoch 1][Step 15500] EN val-acc: 0.4864, val-loss: 1.7994
+[Stage1-EN][Epoch 1][Step 16000] EN val-acc: 0.4883, val-loss: 1.7898
+[Stage1-EN][Epoch 1][Step 16500] EN val-acc: 0.4906, val-loss: 1.7804
+[Stage1-EN][Epoch 1][Step 17000] EN val-acc: 0.4926, val-loss: 1.7713
+[Stage1-EN][Epoch 1][Step 17500] EN val-acc: 0.4947, val-loss: 1.7624
+[Stage1-EN][Epoch 1][Step 18000] EN val-acc: 0.4971, val-loss: 1.7538
+[Stage1-EN][Epoch 1][Step 18500] EN val-acc: 0.4991, val-loss: 1.7454
+[Stage1-EN][Epoch 1][Step 19000] EN val-acc: 0.5018, val-loss: 1.7372
+[Stage1-EN][Epoch 1][Step 19500] EN val-acc: 0.5040, val-loss: 1.7293
+[Stage1-EN][Epoch 1][Step 20000] EN val-acc: 0.5065, val-loss: 1.7214
+[Stage1-EN][Epoch 1][Step 20500] EN val-acc: 0.5086, val-loss: 1.7138
+[Stage1-EN][Epoch 1][Step 21000] EN val-acc: 0.5105, val-loss: 1.7064
+[Stage1-EN][Epoch 1][Step 21500] EN val-acc: 0.5124, val-loss: 1.6992
+[Stage1-EN][Epoch 1][Step 22000] EN val-acc: 0.5148, val-loss: 1.6921
+[Stage1-EN][Epoch 1][Step 22500] EN val-acc: 0.5165, val-loss: 1.6852
+[Stage1-EN][Epoch 1][Step 23000] EN val-acc: 0.5177, val-loss: 1.6785
+[Stage1-EN][Epoch 1][Step 23500] EN val-acc: 0.5206, val-loss: 1.6718
+[Stage1-EN][Epoch 1][Step 24000] EN val-acc: 0.5224, val-loss: 1.6654
+[Stage1-EN][Epoch 1][Step 24500] EN val-acc: 0.5245, val-loss: 1.6590
+[Stage1-EN][Epoch 1][Step 25000] EN val-acc: 0.5262, val-loss: 1.6529
+[Stage1-EN][Epoch 1][Step 25500] EN val-acc: 0.5276, val-loss: 1.6468
+[Stage1-EN][Epoch 1][Step 26000] EN val-acc: 0.5299, val-loss: 1.6409
+[Stage1-EN][Epoch 1][Step 26500] EN val-acc: 0.5320, val-loss: 1.6351
+[Stage1-EN][Epoch 1][Step 27000] EN val-acc: 0.5333, val-loss: 1.6294
+[Stage1-EN][Epoch 1][Step 27500] EN val-acc: 0.5348, val-loss: 1.6237
+[Stage1-EN][Epoch 1][Step 28000] EN val-acc: 0.5367, val-loss: 1.6182
+[Stage1][Epoch 1] COMPLETE → EN val-acc: 0.5369, val-loss: 1.6169
+[Stage1-EN][Epoch 2][Step 500] EN val-acc: 0.5388, val-loss: 1.6115
+[Stage1-EN][Epoch 2][Step 1000] EN val-acc: 0.5400, val-loss: 1.6063
+[Stage1-EN][Epoch 2][Step 1500] EN val-acc: 0.5415, val-loss: 1.6012
+[Stage1-EN][Epoch 2][Step 2000] EN val-acc: 0.5428, val-loss: 1.5961
+→ Early stopping: EN loss 1.5961 ≤ 1.6000
+[Stage1][Epoch 2] COMPLETE → EN val-acc: 0.5428, val-loss: 1.5961
+→ Finished Stage1 at epoch 2
+[Stage2-FR][Epoch 1][Step 500] EN val-acc: 0.4210, val-loss: 2.0052 | FR val-acc: 0.4241, val-loss: 2.1195
+[Stage2-FR][Epoch 1][Step 1000] EN val-acc: 0.3998, val-loss: 2.1115 | FR val-acc: 0.4494, val-loss: 1.9718
+[Stage2-FR][Epoch 1][Step 1500] EN val-acc: 0.3906, val-loss: 2.1685 | FR val-acc: 0.4625, val-loss: 1.9029
+[Stage2-FR][Epoch 1][Step 2000] EN val-acc: 0.3832, val-loss: 2.2071 | FR val-acc: 0.4730, val-loss: 1.8572
+[Stage2-FR][Epoch 1][Step 2500] EN val-acc: 0.3776, val-loss: 2.2337 | FR val-acc: 0.4810, val-loss: 1.8227
+[Stage2-FR][Epoch 1][Step 3000] EN val-acc: 0.3724, val-loss: 2.2571 | FR val-acc: 0.4888, val-loss: 1.7950
+[Stage2-FR][Epoch 1][Step 3500] EN val-acc: 0.3675, val-loss: 2.2788 | FR val-acc: 0.4935, val-loss: 1.7720
+[Stage2-FR][Epoch 1][Step 4000] EN val-acc: 0.3618, val-loss: 2.2990 | FR val-acc: 0.4978, val-loss: 1.7520
+[Stage2-FR][Epoch 1][Step 4500] EN val-acc: 0.3561, val-loss: 2.3170 | FR val-acc: 0.5014, val-loss: 1.7343
+[Stage2-FR][Epoch 1][Step 5000] EN val-acc: 0.3522, val-loss: 2.3312 | FR val-acc: 0.5046, val-loss: 1.7186
+[Stage2-FR][Epoch 1][Step 5500] EN val-acc: 0.3496, val-loss: 2.3470 | FR val-acc: 0.5079, val-loss: 1.7043
+[Stage2-FR][Epoch 1][Step 6000] EN val-acc: 0.3470, val-loss: 2.3598 | FR val-acc: 0.5112, val-loss: 1.6912
+[Stage2-FR][Epoch 1][Step 6500] EN val-acc: 0.3444, val-loss: 2.3750 | FR val-acc: 0.5145, val-loss: 1.6790
+[Stage2-FR][Epoch 1][Step 7000] EN val-acc: 0.3432, val-loss: 2.3851 | FR val-acc: 0.5178, val-loss: 1.6677
+[Stage2-FR][Epoch 1][Step 7500] EN val-acc: 0.3416, val-loss: 2.3978 | FR val-acc: 0.5208, val-loss: 1.6571
+[Stage2-FR][Epoch 1][Step 8000] EN val-acc: 0.3390, val-loss: 2.4072 | FR val-acc: 0.5236, val-loss: 1.6471
+[Stage2-FR][Epoch 1][Step 8500] EN val-acc: 0.3380, val-loss: 2.4190 | FR val-acc: 0.5253, val-loss: 1.6377
+[Stage2-FR][Epoch 1][Step 9000] EN val-acc: 0.3347, val-loss: 2.4295 | FR val-acc: 0.5279, val-loss: 1.6286
+[Stage2-FR][Epoch 1][Step 9500] EN val-acc: 0.3328, val-loss: 2.4386 | FR val-acc: 0.5308, val-loss: 1.6200
+[Stage2-FR][Epoch 1][Step 10000] EN val-acc: 0.3291, val-loss: 2.4507 | FR val-acc: 0.5330, val-loss: 1.6118
+[Stage2-FR][Epoch 1][Step 10500] EN val-acc: 0.3281, val-loss: 2.4582 | FR val-acc: 0.5348, val-loss: 1.6040
+[Stage2-FR][Epoch 1][Step 11000] EN val-acc: 0.3260, val-loss: 2.4668 | FR val-acc: 0.5367, val-loss: 1.5964
+→ Early stopping: FR loss 1.5964 ≤ 1.6000
+[Stage2][Epoch 1] COMPLETE → EN val-acc: 0.3260, EN val-loss: 2.4668 | FR val-acc: 0.5367, FR val-loss: 1.5964
+→ Finished Stage2 at epoch 1
+
+All logged metrics:
+ phase  epoch  train_loss   acc_en  loss_en   acc_fr  loss_fr
+stage1      1    1.911210 0.536867 1.616884      NaN      NaN
+stage1      2    0.114319 0.542787 1.596068      NaN      NaN
+stage2      1    0.687674 0.326009 2.466751 0.536724  1.59643
+
+Metrics saved to char_rnn_europarl_metrics.csv

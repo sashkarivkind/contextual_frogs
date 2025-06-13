@@ -26,8 +26,8 @@ class ElementWiseDecay(Optimizer):
         alpha (float): Decay hyperparameter that scales the influence of the absolute update magnitude.
                        A typical value might be small (e.g. 0.001 to 0.1) to avoid decaying too fast.
     """
-    def __init__(self, params, lr=required, alpha=0.01):
-        defaults = dict(lr=lr, alpha=alpha)
+    def __init__(self, params, lr=required, alpha=0.01, min_lr_mult=0.0):
+        defaults = dict(lr=lr, alpha=alpha, min_lr_mult=min_lr_mult)
         super(ElementWiseDecay, self).__init__(params, defaults)
     
     def step(self, closure=None):
@@ -39,6 +39,8 @@ class ElementWiseDecay(Optimizer):
         for group in self.param_groups:
             base_lr = group['lr']
             alpha = group['alpha']
+            min_lr_mult = group['min_lr_mult']
+
             for p in group['params']:
                 if p.grad is None:
                     continue
@@ -65,5 +67,7 @@ class ElementWiseDecay(Optimizer):
                 # We use an exponential decay function: new_lr_mult = lr_mult * exp(-alpha * |update|)
                 decay_factor = torch.exp(-alpha * torch.abs(update))
                 state['lr_mult'].mul_(decay_factor)
+                # Ensure that lr_mult does not go below the minimum threshold.
+                state['lr_mult'].clamp_(min=min_lr_mult)
                 
         return loss
