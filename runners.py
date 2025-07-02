@@ -19,7 +19,7 @@ class Runner:
                 optimizers=None,
                 optimizer_class=None,
                 optimizer_opts={},
-                learning_rate = 1e-5,
+                learning_rate = None, #1e-5,
                 criterion='MSE',
                 criteria = None,
                 device=None,
@@ -35,6 +35,8 @@ class Runner:
                 constancy_factor=None,
                 enable_combo=False,
                 noise_spec = {},
+                filter_spec = {},
+                scaling_spec = {},
                 test_vec=None,
                 initial_state=None,
                 apply_initial_state=True,
@@ -43,6 +45,7 @@ class Runner:
                 fb_on_nan=lambda x,y:0.,
                 auto_steps=0,
                 grad_less_steps=0,
+                aux_parallel_model=None, #not in use
                 info=None, #not in use
                 sigma_noi = 0.0, #not in use
                 ):
@@ -81,6 +84,7 @@ class Runner:
             fb_on_nan (function): Function to handle NaN values in the feedback.
             auto_steps (int): Number of underhood automatic steps to take after each recorded step.
             grad_less_steps (int): Number of steps to take without gradient updates after each recorded step.
+            aux_parallel_model (TBD): auxilary model connected in parallel to the main model
             info (dict): Additional information (not used); for interface consistency.
         """
         if sigma_noi is not None and sigma_noi > 1e-100:
@@ -153,6 +157,7 @@ class Runner:
         # Initialize low-pass filter
         self.u_lp = LPF(tau=tau_u)
         self.step_method_alias = step_method_alias
+        self.aux_parallel_model = aux_parallel_model 
 
         if test_vec is None:
             self.test_vec = None
@@ -167,7 +172,12 @@ class Runner:
         self.learning_rate = learning_rate
 
         self.noise_spec = noise_spec
+        self.filter_spec = filter_spec
+        self.scaling_spec = scaling_spec
 
+        self.filters = {}
+        for key in self.filter_spec:
+            self.filters[key] = LPF(tau=self.filter_spec[key])
         # Reset the model and low-pass filter
         self.reset(silent=True)
     
@@ -183,7 +193,19 @@ class Runner:
 
         if self.model_type == 'torch':
             if self.optimizers is None: #checking that there is no provided optimizers
-                self.optimizer = self.optimizer_class(self.model.parameters(), 
+                if 'parameter_groups_opts' in self.optimizer_opts:
+                    # only supported for model's subblocks being called models
+                    param_groups = []
+                    for idx, sub_model in enumerate(self.model.models):
+                        param_groups.append({
+                            "params": sub_model.parameters(),
+                            **self.optimizer_opts['parameter_groups_opts'][idx]
+                        })
+                    self.optimizer = self.optimizer_class(param_groups)
+                    if self.learning_rate is not None:
+                        raise ValueError('stand alone learning_rate is not supported when parameter_groups_opts is used')
+                else:
+                    self.optimizer = self.optimizer_class(self.model.parameters(), 
                                 lr=self.learning_rate, **self.optimizer_opts)
                 
             if self.models is None: #checking that there is no provided models
@@ -199,6 +221,10 @@ class Runner:
         self.records = SimpleNamespace(u=[], u_lp=[], test_output=[], extra_results=[])
         self.block_training_next_step = False
         self.u_lp.reset()
+        if self.aux_parallel_model is not None:
+            self.aux_parallel_model.reset_state()
+        for key in self.filters:
+            self.filters[key].reset()
 
     def parse_criterion(self):
         if isinstance(self.criterion,str):
@@ -221,25 +247,25 @@ class Runner:
                 self.records.test_output.append(test_output.cpu().detach().numpy())
     
     def opt_(self, u_t, y_t, constancy_factor=None, u_tm1=None,weight_decay_only=False):
-            
-            if weight_decay_only:
-                self.optimizer.zero_grad()
-                self.optimizer.step()
-                return
-            
-            if constancy_factor is not None:
-                y_t = (1-constancy_factor)*y_t + constancy_factor*u_tm1
+            if self.model_type=='torch':
+                if weight_decay_only and hasattr(self, 'optimizer'):
+                    self.optimizer.zero_grad()
+                    self.optimizer.step()
+                    return
+                
+                if constancy_factor is not None:
+                    y_t = (1-constancy_factor)*y_t + constancy_factor*u_tm1
 
-            y_t_ = torch.tensor([float(y_t)], requires_grad=False).to(self.device)
-            loss = self.criterion(u_t, y_t_)
-            loss.backward()
+                y_t_ = torch.tensor([float(y_t)], requires_grad=False).to(self.device)
+                loss = self.criterion(u_t, y_t_)
+                loss.backward()
 
-            #TODO: ensure optimiser is packed into a list in all cases and remove this check
-            if self.optimizers is not None: 
-                for optimizer in self.optimizers:
-                    optimizer.step()
-            else:
-                self.optimizer.step()
+                #TODO: ensure optimiser is packed into a list in all cases and remove this check
+                if self.optimizers is not None: 
+                    for optimizer in self.optimizers:
+                        optimizer.step()
+                else:
+                    self.optimizer.step()
 
     def take_measurements(self, extra_measurements):
         '''
@@ -282,6 +308,9 @@ class Runner:
         model_input = self.k*x_tm1
         if 'noi_x' in self.noise_spec:
             model_input += self.noise_spec['noi_x'] * np.random.randn(*model_input.shape)
+
+        if 'tau_x' in self.filter_spec:
+            model_input = self.filters['tau_x'].step(model_input, silent=False)
                 
         #hook for taking the first element of x_tm1 as u_tm1
         if self.constancy_factor is not None:
@@ -310,11 +339,16 @@ class Runner:
             rnn_state = model_output[1] if self.rnn_mode else None
 
             u_t = torch_u_t.cpu().detach().numpy().squeeze()
+            
         elif self.model_type=='numpy':
             u_t = self.model(model_input)
         else:
             raise ValueError(f'model_type: {self.model_type} not recognized')
         
+        if self.aux_parallel_model is not None:
+            aux_output = self.aux_parallel_model.current_state()
+            u_t += aux_output
+
 
         if 'noi_u' in self.noise_spec:
             u_t += self.noise_spec['noi_u'] * np.random.randn(*u_t.shape)
@@ -344,18 +378,28 @@ class Runner:
             self.opt_(None,None,weight_decay_only=True)
             err_t = np.zeros_like(self.u_lp.state)
 
+        if self.aux_parallel_model is not None:
+            _ = self.aux_parallel_model.step(err_t)
+
         self.block_training_next_step = not cond #todo: currently overriden at the top level. fix this (either remove here or check why needed)
         y_t = y_t if not np.isnan(y_t) else self.fb_on_nan(self.u_lp.state,err_t)
 
-        #preparing the state for the next step    
-        x_t = np.array([self.u_lp.state,
+        #preparing the state for the next step 
+        u_fb = self.u_lp.state #TODO: consider removing u_lp and working with u_t
+        if 'tau_u_fb' in self.filter_spec:
+            u_fb = self.filters['tau_u_fb'].step(u_fb, silent=False)
+        if 'scaling_u_fb' in self.scaling_spec:
+            u_fb *= self.scaling_spec['scaling_u_fb']
+            
+        x_t = np.array([u_fb,
                         y_t,
-                        err_t]+([self.u_lp.state + err_t] if self.enable_combo else []))
+                        err_t]+([u_fb + err_t] if self.enable_combo else []))
 
         if 'noi_post_u' in self.noise_spec:
             n_post_u = self.noise_spec['noi_post_u'] * np.random.randn(*x_t.shape)
         else:
             n_post_u = 0.0
+
         if record:
             self.records.u.append(u_t+n_post_u)
             self.records.u_lp.append(self.u_lp.state+n_post_u)
@@ -604,7 +648,7 @@ def wrap_runner_for_optimization(model_class=None,
     runner_args = fixed_params['runner'] if 'runner' in fixed_params else {}
     postprocessing_args = fixed_params['postprocessing'] if 'postprocessing' in fixed_params else {}
 
-    def wrapped_runner(stimulus,param_vals):
+    def wrapped_runner(stimulus,param_vals,seed=0):
         
         optim_params = {param_cathegory: {} for param_cathegory in known_param_categories}
         
@@ -629,7 +673,9 @@ def wrap_runner_for_optimization(model_class=None,
         runner = runner_class(model_class=model_class, model_construct_args={**model_args, **optim_params['model']},
                         test_vec=None,
                         **{**runner_args,**optim_params['runner']})
-        
+        if seed is not None:
+            torch.manual_seed(seed)  
+            np.random.seed(seed)
         result = runner.run(stimulus)[0].u_lp
 
         if postprocessing_fun is not None:

@@ -1,6 +1,11 @@
 '''
 v2, added support for fitting coin data
+example usage:
+bash   ./sweep_subjects.sh --min 1 --max 8 --this_sweep_name coin_evoked_run021_MSE_ python fit_single_v2.py  --param_config_id 41 --experimental_data coin --paradigm evoked   --subject_id "_sweep_var" --max_iter 200 --fitting_loss  MSE  --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
+bash   ./sweep_subjects.sh --min 1 --max 8 --this_sweep_name coin_spontaneous_run021_MSE_ python fit_single_v2.py  --param_config_id 41 --experimental_data coin --paradigm spontaneous   --subject_id "_sweep_var" --max_iter 200 --fitting_loss  MSE  --file_name_prefix "_sweep_name"  '>' '_sweep_name_sweep_var.log' '2>&1&'
 '''
+
+
 
 # %%
 import sys
@@ -24,7 +29,7 @@ from scipy.optimize import minimize, basinhopping
 from models import MLP, OneOverSqr
 from runners import wrap_runner_for_optimization
 from fitting_utils import create_fitting_loss
-
+from custom_optimizers import GlobalPNormDecay
 import pickle
 
 import argparse
@@ -58,6 +63,7 @@ def scale_and_bias(x,bias=0,scale=45.0):
 
 x0 = [-4.5,0.4,0.5, 40]
 bounds = [(-6,-3),(-0.9,0.99), (0.05,3), (10,90)]
+method='L-BFGS-B'
 
 fixed_params = {}
 custom_param_mappings = []
@@ -216,6 +222,36 @@ elif args.param_config_id == 5:
     custom_param_mappings = [{'cathegory':'runner','param_name':'learning_rate',
                             'fun': lambda x: 10.**x['normalized_log_lr']},]
 
+elif args.param_config_id == 6:
+
+    x0 = [-3.683e+00,  8.452e-01 , 1.009e-01 , 8.858e-01, -4]
+    bounds = [(-6,-3),(0,2), (0.01,0.5), (0.5,1.1), (-4,0)]
+
+    fixed_params['model'] =  dict(n_inputs = 4,
+                        n_hidden = 20*512,
+                        n_outs = 1,
+                        en_bias = False,
+                        first_layer_init='uniform_unity',
+                    first_layer_weights_trainable = False,
+                    out_layer_init='zeros',
+                        nl = 'relu')        
+
+    fixed_params['runner'] = {'criterion':'MSE', 'k':[0,0,0,1],  'sigma_noi':0.0, 'tau_u':1,
+                            #   'filter_spec':{'tau_u_fb':10.0},
+                            'save_model_at_init':False, 'ic_param_file':None, 'enable_combo':True, 'optimizer_class': GlobalPNormDecay}
+
+    optim_param_mapping= [('custom','log_lr'),
+                        ('custom','alpha'),                                
+                        ('model','b_high'),                      
+                        ('postprocessing','scale'),
+                        # ('custom','weight_decay'), 
+                        ('custom','log_weight_decay'), 
+                                            ]
+    custom_param_mappings = [{'cathegory':'runner','param_name':'learning_rate',
+                                'fun': lambda x: 10.**x['log_lr']},
+                                {'cathegory':'runner','param_name':'optimizer_opts',
+                            'fun': lambda x: {'alpha': x['alpha'], 'weight_decay': 10**x['log_weight_decay']} },]
+
 else:
     raise ValueError('param_config_id not recognized')
 
@@ -296,7 +332,7 @@ def print_fun(x, f, accepted):
 opt_out = {}
 for pooling_fun in pooling_funs:
     opt_out[pooling_fun] = basinhopping(fitting_loss[pooling_fun], x0, niter=args.max_iter,
-                    minimizer_kwargs = dict(method='L-BFGS-B', bounds= bounds),
+                    minimizer_kwargs = dict(method=method, bounds= bounds),
                     callback=print_fun)
 
 with open(f'{args.file_name_prefix}{args.subject_id}.pkl','wb') as f:
@@ -304,3 +340,4 @@ with open(f'{args.file_name_prefix}{args.subject_id}.pkl','wb') as f:
 
 with open(f'{args.file_name_prefix}{args.subject_id}.cfg','wb') as f:
     pickle.dump(args,f)
+

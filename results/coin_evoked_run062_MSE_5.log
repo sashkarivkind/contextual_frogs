@@ -1,0 +1,62 @@
+./../runners.py:392: RuntimeWarning: invalid value encountered in double_scalars
+  err_t]+([u_fb + err_t] if self.enable_combo else []))
+./../runners.py:306: RuntimeWarning: invalid value encountered in multiply
+  model_input = self.k*x_tm1
+./../dsp_utils.py:9: RuntimeWarning: invalid value encountered in double_scalars
+  self.state = 1./self.tau*x + (1-1./self.tau)*self.state
+at minimum 0.0306 accepted 1  with params [-3.683   0.8452  0.1009  0.8858 -4.    ]
+at minimum 0.0687 accepted 1  with params [-3.68409515  0.67298126  0.49999989  1.09999987 -3.87342139]
+at minimum 0.1219 accepted 1  with params [-3.34852771  0.24872176  0.15813105  1.1        -3.69762058]
+at minimum 0.0296 accepted 1  with params [-3.00000262  0.01166687  0.34619923  0.7875344  -3.9999969 ]
+at minimum 100000000000000000000.0000 accepted 0  with params [-3.0519495   0.          0.11690571  1.1        -3.96548945]
+at minimum 0.0232 accepted 1  with params [-3.00000041  0.05722598  0.49999992  0.74032217 -3.99999946]
+at minimum 4021460.0444 accepted 0  with params [-3.00000000e+00  3.70620198e-06  3.62415379e-01  6.32459650e-01
+ -3.95827549e+00]
+at minimum 100000000000000000000.0000 accepted 0  with params [-3.21048518  0.          0.21030842  0.55371657 -4.        ]
+at minimum 0.0853 accepted 1  with params [-3.          0.20645856  0.03333945  0.82208774 -4.        ]
+at minimum 0.2389 accepted 1  with params [-3.40229941  0.21003012  0.5         0.62949787 -4.        ]
+at minimum 0.0508 accepted 1  with params [-3.65781736  0.57573461  0.33587474  0.5        -3.9999992 ]
+at minimum 0.1936 accepted 1  with params [-3.45021271  0.20046307  0.30781155  0.63594992 -3.65326352]
+at minimum 0.0962 accepted 1  with params [-3.82483036e+00  3.28632064e-09  1.00004079e-02  5.00000503e-01
+ -3.53199091e+00]
+at minimum 0.0920 accepted 1  with params [-4.14399118  0.37166142  0.0100001   0.50000006 -3.19424189]
+at minimum 0.0590 accepted 1  with params [-4.44335045  0.46520566  0.11498491  0.5        -3.32134524]
+at minimum 0.0748 accepted 1  with params [-4.60769134  0.15172063  0.01        0.76737423 -3.42439314]
+at minimum 0.0498 accepted 1  with params [-4.45092544  0.19155598  0.38236353  0.52947537 -3.09352519]
+at minimum 0.0483 accepted 1  with params [-4.63786883e+00  3.94454685e-06  2.41190165e-01  1.02759383e+00
+ -2.73545316e+00]
+at minimum 0.0274 accepted 1  with params [-4.69124077  0.4158044   0.37428296  0.87627704 -2.84502025]
+at minimum 0.0684 accepted 1  with params [-4.49321053  0.1071689   0.18296357  0.70693756 -2.61991894]
+at minimum 0.0836 accepted 1  with params [-4.48737592e+00  3.85125711e-06  4.27478294e-01  5.00001157e-01
+ -2.65170625e+00]
+at minimum 0.0843 accepted 1  with params [-4.42383266e+00  2.61057178e-06  1.06507636e-01  8.37326938e-01
+ -2.36980339e+00]
+at minimum 0.0402 accepted 1  with params [-4.49701431  0.25222862  0.45685327  0.64554722 -2.19850428]
+at minimum 0.0722 accepted 1  with params [-4.73798607  0.21624411  0.14224817  0.50000003 -2.62526948]
+at minimum 0.0450 accepted 1  with params [-5.11738723  0.59241934  0.45505902  0.50000053 -2.55156065]
+at minimum 0.0254 accepted 1  with params [-5.19243438  0.96792004  0.5         0.92054756 -2.34903719]
+at minimum 0.0609 accepted 1  with params [-5.6531279   0.96882881  0.5         0.82588873 -2.80007323]
+at minimum 0.0599 accepted 1  with params [-5.63409624  0.66961728  0.5         0.76967725 -2.61148568]
+at minimum 0.0279 accepted 1  with params [-5.14850836  0.59022191  0.5         0.59617683 -3.02031016]
+at minimum 0.0271 accepted 1  with params [-4.8660777   0.51063668  0.49999341  0.50000807 -3.38445361]
+at minimum 0.0611 accepted 1  with params [-5.06279406  0.93236682  0.27639244  0.62812707 -3.64586258]
+at minimum 0.0542 accepted 1  with params [-4.89739326  1.20066299  0.5         0.5        -3.29940275]
+at minimum 0.0617 accepted 1  with params [-4.68591958  1.22800935  0.42982622  0.5        -3.29434111]
+at minimum 0.0819 accepted 1  with params [-4.80859138  0.90605124  0.17099073  0.5        -3.36140263]
+at minimum 0.0479 accepted 1  with params [-4.64006869  0.45749273  0.14542913  0.5        -3.18242782]
+at minimum 0.0809 accepted 1  with params [-4.42992301  0.8687999   0.01        0.96672431 -3.16012217]
+at minimum 0.0242 accepted 1  with params [-4.88516727  0.9743747   0.41296674  0.79706342 -3.04307226]
+at minimum 0.0427 accepted 1  with params [-5.05768104  0.86464791  0.5         0.5        -2.84265072]
+at minimum 0.0556 accepted 1  with params [-5.32463969  1.06749997  0.49999999  0.6655828  -2.3746032 ]
+at minimum 0.1036 accepted 1  with params [-4.90273853  1.39932996  0.16758709  0.5        -2.41129499]
+at minimum 0.0647 accepted 1  with params [-5.01015597  1.19737634  0.5         0.50000022 -2.09520653]
+at minimum 0.0959 accepted 1  with params [-4.53786073  1.64429762  0.08419492  0.86537594 -2.30850951]
+at minimum 0.0640 accepted 1  with params [-4.39095366  1.43726182  0.37259309  0.63961237 -1.9237752 ]
+at minimum 0.0925 accepted 1  with params [-4.33463537  1.16838561  0.03871038  0.78494782 -1.83666882]
+at minimum 0.0937 accepted 1  with params [-4.64290115  1.13370211  0.01000046  1.09999944 -1.45173713]
+at minimum 0.0785 accepted 1  with params [-4.61003364  0.81738933  0.08239583  1.1        -1.27734112]
+at minimum 0.0825 accepted 1  with params [-4.32037022  0.72484084  0.13370531  0.68630676 -1.04906832]
+at minimum 0.0216 accepted 1  with params [-4.14000699  0.51876611  0.395877    0.7398229  -1.36153452]
+at minimum 0.0847 accepted 1  with params [-4.40958277  0.7035792   0.4999997   0.93764573 -1.84001472]
+at minimum 0.0682 accepted 1  with params [-4.87027373  0.53271208  0.5         0.55080047 -1.40364397]
+at minimum 0.0636 accepted 1  with params [-4.49444769  0.65319929  0.5         0.5        -1.01829986]

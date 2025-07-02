@@ -93,10 +93,10 @@ class MLP(nn.Module, ModelForRunner):
         self, n_inputs, n_hidden, n_outs,
         n_layers=1, nl='tanh', en_bias=True,
         prescaling=None, main_gain=None, skip_gain=None,
-        b_low=None, b_high=None,
+        b_low=None, b_high=None, manual_bias_requires_grad=False,
         first_layer_init='default', first_layer_weights_trainable=False,
         out_layer_init='default', post_activation_bias=None,
-        post_activation_bias_scale=1, info=None, return_post_acts=False
+        post_activation_bias_scale=1, info=None, return_post_acts=False,
     ):
         super().__init__()
         # prescaling buffer
@@ -133,8 +133,6 @@ class MLP(nn.Module, ModelForRunner):
         _init_linear(inp, first_layer_init)
         inp.weight.requires_grad = first_layer_weights_trainable
 
-        
-
         # if custom_first_bias:
         #     bias_values = torch.linspace(b_low, b_high, n_hidden)
         #     with torch.no_grad():
@@ -145,7 +143,7 @@ class MLP(nn.Module, ModelForRunner):
         if b_low is not None and b_high is not None:
             bias_vals = torch.linspace(b_low, b_high, n_hidden)
             with torch.no_grad(): inp.bias.copy_(bias_vals)
-            inp.bias.requires_grad = False
+            inp.bias.requires_grad = manual_bias_requires_grad
         self.layers.append(inp)
         for _ in range(n_layers - 1):
             self.layers.append(nn.Linear(n_hidden, n_hidden, bias=en_bias))
@@ -165,6 +163,8 @@ class MLP(nn.Module, ModelForRunner):
         _init_linear(self.output_layer, out_layer_init)
 
         self.full_layer_list = self.layers + nn.ModuleList([self.output_layer])
+        self.input_layer = inp # useid in upper modules
+
 
     def _pre_activation(self, idx, x):
         return self.layers[idx](x)
@@ -488,6 +488,10 @@ class DualRateModel(ModelForRunner):
         self.x_s = self.a_s * self.x_s + self.b_s * e
         self.x_f = self.a_f * self.x_f + self.b_f * e
         return self.x_s + self.x_f
+    
+    def current_state(self) -> float:
+        """ Returns the current state of the model. """
+        return self.x_s + self.x_f
 
     def __call__(self, e: float) -> float:
         """
@@ -497,6 +501,53 @@ class DualRateModel(ModelForRunner):
         """
         return self.step(e)
 
+
+class SingleRateFlexModel(ModelForRunner):
+    def __init__(self, a: float, b: float, c=1, d=1, decay_floor=None, input_proj_vec=None, info=None):
+        """
+        Initialize the dual-rate model parameters.
+        :param a: Retention factor
+        :param b: Learning rate 
+        :param c: Retention factor for the fast process (close to 0)
+        """
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d  
+        self.decay_floor = decay_floor
+        self.input_proj_vec = np.array(input_proj_vec) if input_proj_vec is not None else None
+        self.reset_state()
+
+    def reset_state(self):
+        self.x = 0.0  
+
+    def step(self, e: float) -> float:
+
+        if self.input_proj_vec is not None:
+            e = np.dot(self.input_proj_vec, e)
+        x_sign = np.sign(self.x)
+        e_sign = np.sign(e)
+        self.x = self.x + e_sign * self.b * np.abs(e)**self.c -  x_sign * (1-self.a) *np.abs(self.x) ** self.d
+        
+        if self.decay_floor is not None:
+            if x_sign > 0:
+                self.x = max(self.x, self.decay_floor)
+            elif x_sign < 0:
+                self.x = min(self.x, -self.decay_floor)
+
+        return self.x
+    
+    def current_state(self) -> float:
+        """ Returns the current state of the model. """
+        return self.x
+
+    def __call__(self, e: float) -> float:
+        """
+        Allows the model to be called as model(e), equivalent to model.step(e).
+        :param e: The error signal.
+        :return: The total adaptation response.
+        """
+        return self.step(e)
 
 class Herzfeld14Model(ModelForRunner):
     def __init__(self, sigma=0.25, beta=0.01, alpha=1, basis_interval=[-3,3], n_basis_el=20, eta_ini=0.2, input_proj_vec=None, info=None):

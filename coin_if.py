@@ -86,7 +86,7 @@ class COINWrapper(ModelForRunner):
 
 
 
-def read_COIN_params(path, key_name='participant', relative_path=True):
+def read_COIN_params(path,filename='COIN_param_table.csv', key_name='participant', relative_path=True):
     """
     at the path two files are expected:
     COIN_params_table.csv
@@ -102,7 +102,14 @@ def read_COIN_params(path, key_name='participant', relative_path=True):
         path = COIN_path + path
 
     #reading the COIN_params_table.csv
-    params = pd.read_csv(path + '/COIN_param_table.csv')
+    # params = pd.read_csv(path + '/' + filename)
+
+    params = pd.read_csv(
+            path + '/' + filename,
+            float_precision="round_trip",   # preserve exact input→output
+            engine="c"                      # C engine is required for float_precision
+        )
+
     #reading the param_naming_map.csv if exists
     try:
         param_map = pd.read_csv(path + '/param_naming_map.csv', header=None)
