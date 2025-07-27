@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from copy import copy
 from types import SimpleNamespace
+import ntk_utils
 
 from models import MLP
 from dsp_utils import LPF, parse_samples
@@ -48,6 +49,8 @@ class Runner:
                 aux_parallel_model=None, #not in use
                 info=None, #not in use
                 sigma_noi = 0.0, #not in use
+                take_lin_measurements=False,
+                lin_measurement_opts={},
                 ):
         """
         Initialize the Runner class.
@@ -75,6 +78,7 @@ class Runner:
             noise_spec (dict): the following keys are supported:
                 'noi_x' (float): Noise to be added to the model input (x).
                 'noi_u' (float): Noise to be added to the model output (u).
+                'noi_y' (float): Noise to be added to the target output (y).
                 'noi_post_u' (float): Noise to be added to the output (u) after closing the loop. this component does not go into the feedback loop.
             test_vec (array): Test vector for evaluation.
             initial_state (array): Initial state of the system.
@@ -179,6 +183,8 @@ class Runner:
         for key in self.filter_spec:
             self.filters[key] = LPF(tau=self.filter_spec[key])
         # Reset the model and low-pass filter
+        self.take_lin_measurements = take_lin_measurements
+        self.lin_measurement_opts = lin_measurement_opts
         self.reset(silent=True)
     
     def reset(self, silent=False):
@@ -225,6 +231,12 @@ class Runner:
             self.aux_parallel_model.reset_state()
         for key in self.filters:
             self.filters[key].reset()
+        if self.take_lin_measurements:
+            self._stepwise_recorder = []  # For storing stepwise records if needed
+            x_grid = self.lin_measurement_opts.get('x_grid', None)
+            K = ntk_utils.compute_ntk_matrix_np(self.model, x_grid, device=self.device)
+            H = ntk_utils.compute_dntk_dxj_tensor_np(self.model, x_grid, device=self.device)
+            self._initial_recordings = {'K': K, 'H': H}
 
     def parse_criterion(self):
         if isinstance(self.criterion,str):
@@ -306,6 +318,11 @@ class Runner:
         rnn_state = state[1] if self.rnn_mode else None
 
         model_input = self.k*x_tm1
+
+        if self.take_lin_measurements:
+            #TODO: this will only work correctly for k = [0,0,0,1]; shold be generalized
+            Jx_tm1 = ntk_utils.compute_dfdx_tensor_np(self.model, model_input, device=self.device)
+
         if 'noi_x' in self.noise_spec:
             model_input += self.noise_spec['noi_x'] * np.random.randn(*model_input.shape)
 
@@ -396,7 +413,7 @@ class Runner:
                         err_t]+([u_fb + err_t] if self.enable_combo else []))
 
         if 'noi_post_u' in self.noise_spec:
-            n_post_u = self.noise_spec['noi_post_u'] * np.random.randn(*x_t.shape)
+            n_post_u = self.noise_spec['noi_post_u'] * np.random.randn(*u_t.shape)
         else:
             n_post_u = 0.0
 
@@ -406,7 +423,9 @@ class Runner:
 
             self.records.extra_results.append(
                 self.take_measurements(extra_measurements))
-
+        if self.take_lin_measurements:
+            #TODO: verify the timing
+            self._stepwise_recorder.append({'e': err_t, 'u': u_t, 'y': y_t, 'x': x_tm1, 'Jx': Jx_tm1})
         return (x_t, rnn_state) if self.rnn_mode else (x_t,)
     
     def step_2stage(self, y_t, state, extra_measurements=None, record=True):
