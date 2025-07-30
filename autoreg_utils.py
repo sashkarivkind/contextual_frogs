@@ -54,6 +54,7 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
         opts (dict, optional): Options:
             - compute_lambda (bool): whether to recompute interpolation coeffs on the fly (default True)
             - x_grid (np.ndarray): grid for interpolation
+            - gamma (float): decay rate for the delta_f. One by default. #TODO: consider moving to data['fixed'] or data['time_varying']
         data_format (str): Must be 'dict' for current implementation.
 
     Returns:
@@ -68,6 +69,7 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
     if opts is None:
         opts = {}
     compute_lambda = opts.get('compute_lambda', True)
+    gamma = opts.get('gamma', 1.0)  # Default gamma is 1.0, can be overridden
 
     # Unpack fixed and time-varying data
     fixed = data.get('fixed', {})
@@ -140,7 +142,7 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
         Fp11 = (I_c * Jx_tm1).reshape(1, 1)
         Fp12 = (I_c * lam_tm1).reshape(1, M)
         Fp21 = (I_a * alpha * (bbar_e_tm1 * H_col - Jx_tm1 * K_col)).reshape(M, 1)
-        Fp22 = np.eye(M) - I_a * alpha * np.outer(K_col, lam_tm1)
+        Fp22 = gamma*np.eye(M) - I_a * alpha * np.outer(K_col, lam_tm1)
         assert Fp22.shape == (M, M), f"Fp22 shape mismatch: {Fp22.shape} != {(M, M)}"
 
         # W' block components

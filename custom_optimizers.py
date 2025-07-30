@@ -75,6 +75,11 @@ class ElementWiseDecay(Optimizer):
                 state['lr_mult'].clamp_(min=min_lr_mult)
                 
         return loss
+    
+        def get_lr_mult(self, param):
+            #TODO: test this method (if it goes into any model)
+            """Get the current learning rate multiplier for a specific parameter."""
+            return self.state[param].get('lr_mult', torch.ones_like(param.data))
 
 
 class GlobalPNormDecay(Optimizer):
@@ -166,3 +171,28 @@ class GlobalPNormDecay(Optimizer):
                 group['lr_mult'] = torch.exp(log_lr_mult).item()
                 
         return loss
+
+    def get_global_lr_mult(self):
+        """Ensure that the lr_mult is consistent across all parameter groups."""
+        if len(self.param_groups) == 0:
+            return 1.0
+        else: #sweep through all the groups ensure same lr_mult if yes - return it; else raise an error
+            first_lr_mult = self.param_groups[0]['lr_mult']
+            for group in self.param_groups:
+                if group['lr_mult'] != first_lr_mult:
+                    raise ValueError("get_global_lr_mult called but lr_mult is not consistent across parameter groups.")
+            # If all groups have the same lr_mult, return it.
+            return first_lr_mult
+    
+    def get_global_lr(self):
+        """Get the current global learning rate."""
+        #sweep through all the groups ensure same lr_mult if yes - return lr_mult*lr; else raise an error
+        if len(self.param_groups) == 0:
+            return 1.0
+        else:
+            first_lr_mult = self.param_groups[0]['lr_mult']
+            for group in self.param_groups:
+                if group['lr_mult'] != first_lr_mult:
+                    raise ValueError("get_global_lr called but lr_mult is not consistent across parameter groups.")
+            # If all groups have the same lr_mult, return it.
+            return first_lr_mult * self.param_groups[0]['lr']

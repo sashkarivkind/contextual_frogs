@@ -424,8 +424,16 @@ class Runner:
             self.records.extra_results.append(
                 self.take_measurements(extra_measurements))
         if self.take_lin_measurements:
+            #take optimizer related measurements if available
+            #if optimizer has a method get_global_lr
+            if hasattr(self.optimizers, 'get_global_lr'):
+                this_lr = self.optimizers.get_global_lr()
+            else:
+                this_lr = None
+
             #TODO: verify the timing
-            self._stepwise_recorder.append({'e': err_t, 'u': u_t, 'y': y_t, 'x': x_tm1, 'Jx': Jx_tm1})
+            self._stepwise_recorder.append({'e': err_t, 'u': u_t, 'y': y_t, 'x': x_tm1, 'Jx': Jx_tm1, 'lr': this_lr,})
+
         return (x_t, rnn_state) if self.rnn_mode else (x_t,)
     
     def step_2stage(self, y_t, state, extra_measurements=None, record=True):
@@ -667,7 +675,7 @@ def wrap_runner_for_optimization(model_class=None,
     runner_args = fixed_params['runner'] if 'runner' in fixed_params else {}
     postprocessing_args = fixed_params['postprocessing'] if 'postprocessing' in fixed_params else {}
 
-    def wrapped_runner(stimulus,param_vals,seed=0):
+    def wrapped_runner(stimulus,param_vals,seed=0,return_runner=False):
         
         optim_params = {param_cathegory: {} for param_cathegory in known_param_categories}
         
@@ -700,6 +708,9 @@ def wrap_runner_for_optimization(model_class=None,
         if postprocessing_fun is not None:
             result = postprocessing_fun(result,**{**postprocessing_args, **optim_params['postprocessing']})
 
-        return result
+        if return_runner:
+            return result, runner
+        else:
+            return result
     
     return wrapped_runner

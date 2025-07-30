@@ -162,7 +162,7 @@ def kalman_step(s_tm1, P_tm1, z_t, F, H, Q, R):
 
     # Compute log-likelihood
     m = z_t.shape[0]
-    sign, log_det_S = np.linalg.slogdet(S)
+    _sign, log_det_S = np.linalg.slogdet(S)
     log_likelihood = -0.5 * (m * np.log(2 * np.pi) + log_det_S + (y.T @ S_inv @ y))
 
     return z_pred, S, float(log_likelihood), s_updated, P_updated
@@ -237,6 +237,7 @@ def run_trial(filt_params, sim_data=None, sim_params=None, Tmax=100, missing_pro
     # total_ll = 0.0
     # count_ll = 0
     lls = []
+    Ps = []
 
     #a dummy first step - here we assume that the 
 
@@ -268,16 +269,17 @@ def run_trial(filt_params, sim_data=None, sim_params=None, Tmax=100, missing_pro
                 Q_t = np.zeros((n, n))
             if R_t is None:
                 raise ValueError("R_t must be provided for the first step.")
-            z_pred_t, sigma_z, ll, s_upd, P = kalman_step(
-                np.zeros((n, 1)), np.eye(n), z_t,
-                F_t, H_t, Q_t, R_t
-            )
+            # TODO: check why this sham step was added at some point
+            # z_pred_t, sigma_z, ll, s_upd, P = kalman_step(
+            #     np.zeros((n, 1)), np.eye(n), z_t,
+            #     F_t, H_t, Q_t, R_t
+            # )
 
         z_pred_t, sigma_z, ll, s_upd, P = kalman_step(
                 s_prev, P, z_t,
                 F_t, H_t, Q_t, R_t
             )
-
+        Ps.append(P)
         s_est[:, t] = s_upd.flatten()
         z_pred[:, t] = z_pred_t.flatten()
         lls.append(ll if ll is not None else np.nan)
@@ -308,7 +310,9 @@ def run_trial(filt_params, sim_data=None, sim_params=None, Tmax=100, missing_pro
         lls=np.array(lls),
         s_est=s_est,
         z_obs=z_obs,
-        z_pred=z_pred
+        z_pred=z_pred,
+        sigma_z_pred=sigma_z,
+        Ps=Ps
     )
 
 

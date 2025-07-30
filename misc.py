@@ -45,3 +45,12 @@ def parse_log_file(filename):
         'accepted': np.array(accepted_flags, dtype=bool),
         'x': np.array(params_list)
     }
+
+def list_of_dicts_to_dict_of_lists(list_of_dicts):
+    out_dict = {}
+    for d in list_of_dicts:
+        for k,v in d.items():
+            if k not in out_dict:
+                out_dict[k] = []
+            out_dict[k].append(v)
+    return out_dict
