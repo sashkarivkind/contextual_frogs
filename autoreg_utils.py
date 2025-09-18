@@ -43,7 +43,7 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
         - H                                 : (M x M) Hessian* matrix (*matrix of derivatives d/x_j K_ij)
       data['time_varying']:
         subkeys that can appear here or in 'fixed' (but not both):
-        - x             : length-T array of inputs
+        - x             : length-T array of inputs -- this MUST be time-varying for now
         - Jx           : length-T array of Jx(t) scalars
         - bbar_e         : length-T array of baseline errors (double bar e)
         - trial_type    : length-T boolean array (True=adaptation, False=channel)
@@ -71,35 +71,61 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
     compute_lambda = opts.get('compute_lambda', True)
     gamma = opts.get('gamma', 1.0)  # Default gamma is 1.0, can be overridden
 
+    def _get_time_point(key, t):
+        """
+        Helper to fetch a value either from `fixed` or from the time‐series in `tv`.
+        If `key` is in `fixed`, return that.
+        Elif it’s in `tv`, return the entry at time t.
+        Else raise a KeyError.
+        """
+        if key in fixed:
+            return fixed[key]
+        elif key in tv:
+            return tv[key][t]
+        else:
+            raise KeyError(f"Key '{key}' not found in fixed or time_varying data.")
+        
+
     # Unpack fixed and time-varying data
     fixed = data.get('fixed', {})
     tv    = data.get('time_varying', {})
+    #if no keys in time varying - set T to 1
+    #otherwise set T to the length of the time-varying data
+    if not tv:
+        T = 1
+    else:
+        first_key = next(iter(tv))
+        T = len(tv[first_key])
+
 
     # Any parameter may be provided in either 'fixed' or 'time_varying' (not both)
-    sigma_u = fixed.get('sigma_u', tv.get('sigma_u', None))
-    sigma_y = fixed.get('sigma_y', tv.get('sigma_y', None))
-    sigma_x = fixed.get('sigma_x', tv.get('sigma_x', None))
-    sigma_a = fixed.get('sigma_a', tv.get('sigma_a', None))
-    alpha   = fixed.get('alpha',    tv.get('alpha',    None))
-    K       = np.asarray(fixed.get('K',    tv.get('K',    [])))
-    H_mat   = np.asarray(fixed.get('H',    tv.get('H',    [])))
-    xgrid   = np.asarray(opts.get('x_grid', fixed.get('x_grid', tv.get('x_grid', []))))
+    # sigma_u = fixed.get('sigma_u', tv.get('sigma_u', None))
+    # sigma_y = fixed.get('sigma_y', tv.get('sigma_y', None))
+    # sigma_x = fixed.get('sigma_x', tv.get('sigma_x', None))
+    # sigma_a = fixed.get('sigma_a', tv.get('sigma_a', None))
+    # alpha_tm1   = fixed.get('alpha',    tv.get('alpha',    None))
+    # K       = np.asarray(fixed.get('K',    tv.get('K',    [])))
+    # H_mat   = np.asarray(fixed.get('H',    tv.get('H',    [])))
+    xgrid   = np.asarray(opts['x_grid'])
 
 
-    x_tv        = np.asarray(tv.get('x', []))
-    Jx_tv       = np.asarray(tv.get('Jx', []))
-    bbar_e_tv    = np.asarray(tv.get('bbar_e', []))
-    trial_type  = np.asarray(tv.get('trial_type', []), dtype=bool)
+    # Jx_tv       = np.asarray(tv.get('Jx', []))
+    # bbar_e_tv    = np.asarray(tv.get('bbar_e', []))
+    # trial_type  = np.asarray(tv.get('trial_type', []), dtype=bool)
     # print(f'x_tv: {x_tv}, Jx_tv: {Jx_tv}, bbar_e_tv: {bbar_e_tv}, trial_type: {trial_type}')
-    T = x_tv.shape[0]
+    # T = x_tv.shape[0]
+
 
     # Compute or retrieve interpolation weights
+    if 'x' not in tv:
+        raise KeyError("Key 'x' not found in time_varying data. It is required for now.")
+    x_tv        = np.asarray(tv.get('x', []))
     if compute_lambda:
         lambdas = compute_interpolation_coeffs(x_tv, xgrid)
     else:
         lambdas = np.asarray(tv.get('lambda', []))
 
-    M = K.shape[0]
+    M = xgrid.shape[0] 
     nullMxM = np.zeros((M, M))
     null1xM = np.zeros((1, M))
     nullMx1 = np.zeros((M, 1))
@@ -110,12 +136,11 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
                        null1xM, 
                        [[1]], 
                        [[0]]))
-    R     = np.array([[sigma_a**2]])
-    sigmas   = np.diag([sigma_u**2, sigma_y**2, sigma_x**2])
+
 
         # Prepare storage
     if timestep is None:
-        F_list, W_list, Q_list, R_list, H_list = [None]*T, [None]*T, [None]*T, [R]*T, [H_obs]*T
+        F_list, W_list, Q_list, R_list, H_list = [None]*T, [None]*T, [None]*T, [None]*T, [H_obs]*T
 
     # Build matrices for each time step
     # TODO: decide whether to start from step 1, where step 0 is the initial state 
@@ -123,38 +148,59 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
 
 
 
-    for t in range(1, T):
+    for t in range(0, T):
+
         if timestep is not None and timestep != t:
             continue
+        sigma_a = _get_time_point('sigma_a', t)
+        R_t     = np.array([[sigma_a**2]])
+        R_list[t] = R_t
+        if t == 0:
+            continue
+
         tm1 = t - 1
-        I_a       = 1 if trial_type[tm1] else 0
-        I_c       = 1 - I_a
-        Jx_tm1   = Jx_tv[tm1]
         lam_tm1  = lambdas[tm1]
         lam_t  = lambdas[t]
-        bbar_e_tm1= bbar_e_tv[tm1] #TODO: doublecheck consistency with x: why here bbar and there no bbar?
 
+        Jx_tm1   = _get_time_point('Jx', tm1)
+        Jx_t     = _get_time_point('Jx', t)
+        bbar_e_tm1= _get_time_point('bbar_e', tm1)
+        
+        alpha_tm1 = _get_time_point('alpha', tm1)
+        gamma_tm1 = _get_time_point('gamma', tm1)
         # Interpolate kernel and Hessian columns
-        K_col = K.dot(lam_t)
-        H_col = H_mat.dot(lam_t)
+        K_tm1 = _get_time_point('K', tm1)
+        H_mat_tm1 = _get_time_point('H', tm1)
+
+        trial_type_tm1 = _get_time_point('trial_type', tm1)
+        sigma_u = _get_time_point('sigma_u', t)
+        sigma_y = _get_time_point('sigma_y', tm1)
+        sigma_x = _get_time_point('sigma_x', tm1)
+
+        K_col_tm1 = K_tm1.dot(lam_tm1)
+        H_col_tm1 = H_mat_tm1.dot(lam_tm1)
+        I_a       = 1 if trial_type_tm1 else 0
+        I_c       = 1 - I_a
+
+        vars   = np.diag([sigma_u**2, sigma_y**2, sigma_x**2])
 
         # F' block components
         Fp11 = (I_c * Jx_tm1).reshape(1, 1)
         Fp12 = (I_c * lam_tm1).reshape(1, M)
-        Fp21 = (I_a * alpha * (bbar_e_tm1 * H_col - Jx_tm1 * K_col)).reshape(M, 1)
-        Fp22 = gamma*np.eye(M) - I_a * alpha * np.outer(K_col, lam_tm1)
+        Fp21 = (I_a * alpha_tm1 * (bbar_e_tm1 * H_col_tm1 - Jx_tm1 * K_col_tm1)).reshape(M, 1)
+        Fp22 = gamma_tm1*np.eye(M) - I_a * alpha_tm1 * np.outer(K_col_tm1, lam_tm1)
         assert Fp22.shape == (M, M), f"Fp22 shape mismatch: {Fp22.shape} != {(M, M)}"
 
         # W' block components
         Wp11, Wp12, Wp13 = np.reshape(I_c,(1, 1)), np.reshape(I_a,(1, 1)), np.ones((1,1))
-        Wp21           = -I_a * alpha * K_col
-        Wp22           =  (I_a * alpha * K_col).reshape(M, 1)
+        Wp21           = -I_a * alpha_tm1 * K_col_tm1
+        Wp22           =  (I_a * alpha_tm1 * K_col_tm1).reshape(M, 1)
         Wp23           =  nullMx1
 
         # Assemble F_t
         row1 = np.hstack((Fp11, Fp12, null1x1, Wp11))
         row2 = np.hstack((Fp21, Fp22, np.zeros((M,1)), Wp21.reshape(M,1)))
-        Jx_t = Jx_tv[t]
+
         r3_1    = Jx_t * Fp11 + lam_t.T.dot(Fp21)
         r3_2    = Jx_t * Fp12 + lam_t.dot(Fp22)
         r3_4    = Jx_t * Wp11 + lam_t.dot(Wp21)
@@ -173,10 +219,10 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
         W_t   = np.vstack((row1W, row2W, row3W, row4W))
 
         # Process noise covariance
-        Q_t = W_t.dot(sigmas).dot(W_t.T)
+        Q_t = W_t.dot(vars).dot(W_t.T)
 
         if timestep is None:
-            F_list[t], W_list[t], Q_list[t] = F_t, W_t, Q_t 
+            F_list[t], W_list[t], Q_list[t], R_list[t] = F_t, W_t, Q_t, R_t 
 
     # #for the initial step t=0 apply the same parameters as for t=1
     # if timestep is None:
@@ -184,7 +230,7 @@ def clnn_kalman_matrix_prep(data, timestep=None, opts=None, data_format='dict'):
 
     # Return results
     if timestep is None:
-        return {'F': F_list, 'W': W_list, 'Q': Q_list, 'H': H_list, 'R': R_list}
+        return {'F': F_list, 'W': W_list, 'Q': Q_list, 'H': H_list, 'R': R_list, 'lambdas': lambdas}
     else:
         return {'F': F_t, 'W': W_t, 'Q': Q_t, 'H': H_obs, 'R': R}
 

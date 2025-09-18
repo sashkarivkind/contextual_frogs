@@ -3,4 +3,7 @@
 ./*.pyc
 *.pyo
 ./.ipynb_checkpoints
-./results/*
+results/*
+experimental/optim/results/*/*
+experimental/optim/results/realthing512/post_sigma.txt
+experimental/optim/results/realthing512/pred_a.txt

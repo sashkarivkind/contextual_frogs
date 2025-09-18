@@ -324,11 +324,15 @@ class Runner:
             Jx_tm1 = ntk_utils.compute_dfdx_tensor_np(self.model, model_input, device=self.device)
 
         if 'noi_x' in self.noise_spec:
-            model_input += self.noise_spec['noi_x'] * np.random.randn(*model_input.shape)
+            # throw non implemented error if k is not o [0,0,0,1]
+            if not np.array_equal(self.k, [0,0,0,1]):
+                raise NotImplementedError(f'Noise injection not implemented for k={self.k}')
+            model_input += self.noise_spec['noi_x'] * self.k*np.random.randn(*model_input.shape)
 
         if 'tau_x' in self.filter_spec:
             model_input = self.filters['tau_x'].step(model_input, silent=False)
                 
+        x_tm1_for_recording = model_input.copy() #for recording purposes #TODO: unify notation (x and model_input)        
         #hook for taking the first element of x_tm1 as u_tm1
         if self.constancy_factor is not None:
             u_tm1 = x_tm1[0]
@@ -355,20 +359,21 @@ class Runner:
             torch_u_t = model_output if not self.rnn_mode else model_output[0]
             rnn_state = model_output[1] if self.rnn_mode else None
 
+            if 'noi_u' in self.noise_spec:
+                torch_u_t += self.noise_spec['noi_u'] * torch.randn(*torch_u_t.shape).to(self.device)
+
             u_t = torch_u_t.cpu().detach().numpy().squeeze()
             
         elif self.model_type=='numpy':
             u_t = self.model(model_input)
+            if 'noi_u' in self.noise_spec:
+                u_t += self.noise_spec['noi_u'] * np.random.randn(*u_t.shape)
         else:
             raise ValueError(f'model_type: {self.model_type} not recognized')
         
         if self.aux_parallel_model is not None:
             aux_output = self.aux_parallel_model.current_state()
             u_t += aux_output
-
-
-        if 'noi_u' in self.noise_spec:
-            u_t += self.noise_spec['noi_u'] * np.random.randn(*u_t.shape)
             
         self.u_lp.step(u_t, silent=True)
 
@@ -432,7 +437,12 @@ class Runner:
                 this_lr = None
 
             #TODO: verify the timing
-            self._stepwise_recorder.append({'e': err_t, 'u': u_t, 'y': y_t, 'x': x_tm1, 'Jx': Jx_tm1, 'lr': this_lr,})
+            self._stepwise_recorder.append({'e': err_t, 
+                                            'u': u_t, 
+                                            'y': y_t, 
+                                            'x': x_tm1_for_recording, #in notes the x that is input to the model is denoted x_t
+                                            'Jx': Jx_tm1, 
+                                            'lr': this_lr,})
 
         return (x_t, rnn_state) if self.rnn_mode else (x_t,)
     

@@ -1,4 +1,7 @@
 import numpy as np
+import argparse
+import pandas as pd
+
 
 def bic(measured_data, modeled_data, k_params,
         mode='white_gaussian',
@@ -142,11 +145,11 @@ def kalman_step(s_tm1, P_tm1, z_t, F, H, Q, R):
     z_pred = H @ s_pred
     S = H @ P_pred @ H.T + R
     # print(f'S: {S}, H: {H}, P_pred: {P_pred}, R: {R}')
-
+    info = dict(S=S.copy(), H=H.copy(), P_pred=P_pred.copy(), R=R.copy())
     # Check for missing observation
     if z_t is None or (isinstance(z_t, np.ndarray) and np.isnan(z_t).all()):
         # No measurement update
-        return z_pred, S, None, s_pred, P_pred
+        return z_pred, S, None, s_pred, s_pred, P_pred, info
 
     # Innovation (residual)
     y = z_t - z_pred
@@ -164,8 +167,17 @@ def kalman_step(s_tm1, P_tm1, z_t, F, H, Q, R):
     m = z_t.shape[0]
     _sign, log_det_S = np.linalg.slogdet(S)
     log_likelihood = -0.5 * (m * np.log(2 * np.pi) + log_det_S + (y.T @ S_inv @ y))
+    info.update(dict(
+        s_pred=s_pred.copy(),
+        P_pred=P_pred.copy(),
+        s_updated=s_updated.copy(),
+        P_updated=P_updated.copy(),
+        K=K.copy(),
+        y=y.copy(),
+        log_likelihood=log_likelihood.copy()
+    ))
 
-    return z_pred, S, float(log_likelihood), s_updated, P_updated
+    return z_pred, S, float(log_likelihood), s_updated, s_pred, P_updated , info
 
 
 def run_trial(filt_params, sim_data=None, sim_params=None, Tmax=100, missing_prob=0.1, discard_1st_step_stats=False):
@@ -232,12 +244,15 @@ def run_trial(filt_params, sim_data=None, sim_params=None, Tmax=100, missing_pro
 
     # 2) Run Kalman filter
     s_est = np.zeros((n, Tmax))
+    s_pred = np.zeros((n, Tmax))
     z_pred = np.zeros((m, Tmax))
     P = np.eye(n)
     # total_ll = 0.0
     # count_ll = 0
     lls = []
     Ps = []
+    var_zs = []
+    infos = []
 
     #a dummy first step - here we assume that the 
 
@@ -270,19 +285,24 @@ def run_trial(filt_params, sim_data=None, sim_params=None, Tmax=100, missing_pro
             if R_t is None:
                 raise ValueError("R_t must be provided for the first step.")
             # TODO: check why this sham step was added at some point
-            # z_pred_t, sigma_z, ll, s_upd, P = kalman_step(
+            # z_pred_t, var_z, ll, s_upd, P = kalman_step(
             #     np.zeros((n, 1)), np.eye(n), z_t,
             #     F_t, H_t, Q_t, R_t
             # )
 
-        z_pred_t, sigma_z, ll, s_upd, P = kalman_step(
-                s_prev, P, z_t,
+        z_pred_t, var_z, ll, s_upd, s_pred_, P , info = kalman_step(
+                s_prev, P
+                , z_t,
                 F_t, H_t, Q_t, R_t
             )
         Ps.append(P)
+        var_zs.append(var_z)
         s_est[:, t] = s_upd.flatten()
+        s_pred[:, t] = s_pred_.flatten()
         z_pred[:, t] = z_pred_t.flatten()
         lls.append(ll if ll is not None else np.nan)
+        infos.append(info)
+
         # if ll is not None:
         #     total_ll += ll
         #     count_ll += 1
@@ -300,19 +320,22 @@ def run_trial(filt_params, sim_data=None, sim_params=None, Tmax=100, missing_pro
         state_rms = float('nan')
     obs_rms = np.sqrt(np.nanmean((z_obs[:, ii:] - z_pred[:, ii:])**2))
     # avg_ll = total_ll / count_ll if count_ll > 0 else float('nan')
+    total_ll = np.nansum(lls[ii:]) if lls else np.nan
     avg_ll = np.nanmean(lls[ii:]) if lls else np.nan
-
     # return state_rms, obs_rms, avg_ll , lls
     return dict(
         state_rms=state_rms,
         obs_rms=obs_rms,
+        total_ll=total_ll,
         avg_ll=avg_ll,
         lls=np.array(lls),
         s_est=s_est,
+        s_pred=s_pred,
         z_obs=z_obs,
         z_pred=z_pred,
-        sigma_z_pred=sigma_z,
-        Ps=Ps
+        var_z_pred=var_zs,
+        Ps=Ps,
+        infos=infos
     )
 
 
@@ -362,14 +385,322 @@ def sensitivity_test(param0, Nmax=20, M=10, delta=0.2, data=None):
               f"AvgLL={mean_ll:.4f} (Δ (positive is better) {dll:+.4f})")
 
 
-if __name__ == "__main__":
-    # Example default parameters
-    np.random.seed(0)
+def multivar_entropy(cov: np.ndarray, regularization: float = 1e-55) -> float:
+    """
+    Compute the differential entropy of an m-dimensional Gaussian with covariance `cov`:
+        H = 1/2 * ln((2*pi*e)^m * det(cov)).
+    """
+    m = cov.shape[0]
+    cov += np.eye(m) * regularization  # Regularize covariance matrix
+    sign, logdet = np.linalg.slogdet(cov)
+    if sign <= 0:
+        raise ValueError(f"Covariance matrix must be positive-definite. logdet: {logdet}, sign: {sign}")
+    # H = 0.5 * (m * ln(2*pi*e) + ln(det(cov)))
+    print(f"m: {m}, logdet: {logdet}")
+    return 0.5 * (m * np.log(2 * np.pi * np.e) + logdet)
 
-    F = np.array([[0.8, 1], [0, 1]])
+
+# def run_covariance_test(filt_params,
+#                         trials: int = 100,
+#                         Tmax: int = 117,
+#                         bootstrap_samples: int = 100,
+#                         seed: int = None):
+#     """
+#     Compare total filter log-likelihood vs. Gaussian entropy from sample covariance.
+#     """
+#     if seed is not None:
+#         np.random.seed(seed)
+
+#     all_innovs = []
+#     filter_lls = []
+
+#     # collect innovations and filter LLs
+#     for _ in range(trials):
+#         trial = run_trial(filt_params=filt_params,
+#                           sim_params=filt_params,
+#                           Tmax=Tmax)
+#         filter_lls.append(trial['total_ll'])
+#         for info in trial['infos']:
+#             if 'y' in info:
+#                 all_innovs.append(info['y'].flatten())
+
+#     innovs = np.vstack(all_innovs)
+#     N, m = innovs.shape
+
+#     # sample covariance
+#     Sigma_emp = (innovs.T @ innovs) / N
+
+#     # 1) empirical LL under Σ_emp
+#     inv_emp = np.linalg.inv(Sigma_emp)
+#     sign_emp, logdet_emp = np.linalg.slogdet(Sigma_emp)
+#     quad = np.sum([y @ inv_emp @ y for y in innovs])
+#     LL_emp = -0.5 * (N * m * np.log(2 * np.pi) + N * logdet_emp + quad)
+
+#     # 2) filter's own total LL
+#     LL_filt = np.sum(filter_lls)
+
+#     # 3) entropy-based total neg-log-likelihood
+#     H_full = multivar_entropy(Sigma_emp)
+#     LL_entropy = -N * H_full
+
+#     # 4) bootstrap tolerance
+#     LL_bs = []
+#     for _ in range(bootstrap_samples):
+#         idx = np.random.choice(N, size=N, replace=True)
+#         samp = innovs[idx]
+#         S_b = (samp.T @ samp) / N
+#         inv_b = np.linalg.inv(S_b)
+#         sign_b, logdet_b = np.linalg.slogdet(S_b)
+#         quad_b = np.sum([y @ inv_b @ y for y in samp])
+#         LL_bs.append(-0.5 * (N * m * np.log(2 * np.pi) + N * logdet_b + quad_b))
+#     sigma_LL = float(np.std(LL_bs, ddof=1))
+#     tol = 3 * sigma_LL
+
+#     # report
+#     print("\n=== Covariance-based LL test ===")
+#     print(f" Empirical-cov log-lik: {LL_emp:.4f}")
+#     print(f" Filter’s total  log-lik: {LL_filt:.4f}")
+#     print(f" Entropy-based negLL:   {LL_entropy:.4f}")
+#     print(f" Bootstrap σ_LL:         {sigma_LL:.4f}")
+#     print(f" Tolerance (3 σ):        ±{tol:.4f}\n")
+
+#     # assertion against filter LL
+#     assert abs(LL_emp - LL_filt) <= tol, (
+#         f"|ΔLL_emp - LL_filt| = {abs(LL_emp - LL_filt):.4f} exceeds 3σ ({tol:.4f})"
+#     )
+#     # assertion entropy vs filter
+#     assert abs(LL_entropy - LL_filt) <= tol, (
+#         f"|LL_entropy - LL_filt| = {abs(LL_entropy - LL_filt):.4f} exceeds 3σ ({tol:.4f})"
+#     )
+#     print("Covariance-LL and entropy tests passed.\n")
+
+
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser(
+#         description="Run sensitivity and covariance-vs-filter log-likelihood tests."
+#     )
+#     parser.add_argument("--trials", "-t", type=int, default=100,
+#                         help="Number of trials for covariance test (default: 100)")
+#     parser.add_argument("--bootstrap-samples", "-b", type=int, default=100,
+#                         help="Bootstrap draws (default: 100)")
+#     parser.add_argument("--seed", "-s", type=int, default=None,
+#                         help="Random seed (default: None)")
+#     args = parser.parse_args()
+
+#     # default filter parameters
+#     np.random.seed(0)
+#     F = np.array([[0.8, 1], [0, 1]])
+#     H = np.array([[1, 0.4]])
+#     Q = np.eye(2) * 0.1
+#     R = np.eye(1) * 0.5
+#     param0 = {'F': F, 'H': H, 'Q': Q, 'R': R}
+
+#     sensitivity_test(param0)
+#     run_covariance_test(param0,
+#                         trials=args.trials,
+#                         Tmax=117,
+#                         bootstrap_samples=args.bootstrap_samples,
+#                         seed=args.seed)
+    
+
+def run_covariance_test(filt_params,
+                        trials: int = 100,
+                        Tmax: int = 45,
+                        bootstrap_samples: int = 100,
+                        seed: int = None,
+                        missing_prob: float = 0.1):
+    """
+    Compare total filter log-likelihood vs. Gaussian entropy from sample covariance of observations.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    all_innovs = []
+    all_obs = []  # collect observations
+    filter_lls = []
+
+    # 1) run trials and collect innovations, observations, and filter LLs
+    for _ in range(trials):
+        trial_obs = []
+        trial = run_trial(filt_params=filt_params,
+                          sim_params=filt_params,
+                          Tmax=Tmax, 
+                          missing_prob=missing_prob)
+        # collect innovations
+        for info in trial['infos']:
+            if 'y' in info:
+                all_innovs.append(info['y'].flatten())
+        # collect observations (disable skip missing)
+        z_obs = trial['z_obs'].T  # shape (Tmax, m)
+        for z in z_obs:
+            if not np.isnan(z).all():
+                trial_obs.append(z.flatten())
+        # collect filter log-likelihood
+        filter_lls.append(trial['total_ll'])
+        all_obs.append(np.array(trial_obs))
+
+    innovs = np.vstack(all_innovs)    # shape (N_i, m)
+    N_i, m = innovs.shape
+    obs = np.array(all_obs)          # shape (N_o, Tmax, m)
+    N_o, Tmax, _ = obs.shape
+    #transpose to make the T dimension first
+    obs = obs.transpose(1, 2, 0)     # shape (Tmax, m, N_o)
+    #flatten the last two dimensions
+    obs = obs.reshape(obs.shape[0], -1)  # shape (Tmax, m*N_o)
+
+    # 2) empirical covariance of innovations Σ_emp and corresponding LL
+    Sigma_emp = (innovs.T @ innovs) / N_i
+    inv_emp = np.linalg.inv(Sigma_emp)
+    sign_emp, logdet_emp = np.linalg.slogdet(Sigma_emp)
+    quad_i = np.sum([y @ inv_emp @ y for y in innovs])
+    LL_emp = -0.5 * (N_i * m * np.log(2 * np.pi) + N_i * logdet_emp + quad_i)
+
+    # 3) empirical covariance of observations Σ_z and entropy-based negLL (Tmax *  Tmax)
+    Sigma_z = (obs @ obs.T) / N_o
+    # compute full entropy H = 1/2 * ln((2*pi*e)^m * det(Sigma_z))
+    H_obs = multivar_entropy(Sigma_z)
+    LL_entropy =  -N_o*H_obs  
+
+    # 4) filter's own total LL
+    LL_filt = np.sum(filter_lls)
+
+    # 5) bootstrap tolerance on innovation LL
+    LL_bs = []
+    for _ in range(bootstrap_samples):
+        idx = np.random.choice(N_i, size=N_i, replace=True)
+        samp = innovs[idx]
+        S_b = (samp.T @ samp) / N_i
+        inv_b = np.linalg.inv(S_b)
+        sign_b, logdet_b = np.linalg.slogdet(S_b)
+        quad_b = np.sum([y @ inv_b @ y for y in samp])
+        LL_bs.append(-0.5 * (N_i * m * np.log(2 * np.pi) + N_i * logdet_b + quad_b))
+    sigma_LL = float(np.std(LL_bs, ddof=1))
+    tol = 3 * sigma_LL
+
+    # 6) report & assert
+    print("=== Covariance-based LL test ===")
+    print(f" Empirical-cov log-lik (innovations): {LL_emp:.4f}")
+    print(f" Filter’s  total   log-lik:           {LL_filt:.4f}")
+    print(f" Entropy-based negLL (observations): {LL_entropy:.4f}")
+    print(f" Bootstrap σ_LL:                     {sigma_LL:.4f}")
+    print(f" Tolerance (3 σ):                    ±{tol:.4f}")
+
+    # assertion against filter LL
+    # assert abs(LL_emp - LL_filt) <= tol, (
+    #     f"|LL_emp - LL_filt| = {abs(LL_emp - LL_filt):.4f} exceeds 3σ ({tol:.4f})"
+    # )
+    # # assertion entropy vs filter
+    # assert abs(LL_entropy - LL_filt) <= tol, (
+    #     f"|LL_entropy - LL_filt| = {abs(LL_entropy - LL_filt):.4f} exceeds 3σ ({tol:.4f})"
+    # )
+    # print("Covariance-LL and entropy tests passed.")
+    return {
+                # 'iter': idx,
+                'LL_emp': LL_emp,
+                'LL_filt': LL_filt,
+                'LL_entropy': LL_entropy,
+                'sigma_LL': sigma_LL
+            }
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Run sensitivity and covariance-vs-filter log-likelihood tests."
+    )
+    parser.add_argument("--trials", "-t", type=int, default=100,
+                        help="Number of trials for covariance test (default: 100)")
+    parser.add_argument("--bootstrap-samples", "-b", type=int, default=100,
+                        help="Bootstrap draws (default: 100)")
+    parser.add_argument("--seed", "-s", type=int, default=None,
+                        help="Random seed (default: None)")
+    parser.add_argument("--Tmax", "-T", type=int, default=103,
+                        help="Number of time steps for simulation (default: 103)")
+    parser.add_argument("--do-sensitivity-test", "-sensitivity", action='store_true',
+                        help="Run sensitivity test (default: False)")
+    parser.add_argument("--do-covariance-test", "-covariance", action='store_true',
+                        help="Run covariance-based log-likelihood test (default: False)")
+    parser.add_argument("--iterate-covariance-test", "-iter", action='store_true',
+                        help="Run covariance-based log-likelihood test for multiple iterations (default: False)")
+    parser.add_argument("--covariance-test-iter", "-cov_iter", type=int, default=10,
+                        help="Number of iterations for covariance test (default: 10)")
+    parser.add_argument("--cov-test-filename", "-cov_file", type=str, default='cov_test_results.csv',
+                        help="Filename to save covariance test results (default: 'cov_test_results.csv')")
+    parser.add_argument("--cov-missing-prob", "-missing", type=float, default=0.0,
+                        help="Probability of missing an observation in covariance test (default: 0.0)")
+    args = parser.parse_args()
+
+    if args.cov_missing_prob > 0:
+        raise NotImplementedError("Covariance test with missing observations is not implemented yet.")
+    # default filter parameters
+    np.random.seed(args.seed)
+    # F = np.array([[0.8, 1, 0.3], [0, 1, -0.7], [-0.3, 0.8, 0.1]])
+    # H = np.array([[1, 0.4, 0.6]])
+    # Q = np.eye(3) * 0.1
+    # R = np.eye(1) * 0.5
+
+    F = np.array([[0.8, 1], [0.2, -0.5]])
     H = np.array([[1, 0.4]])
     Q = np.eye(2) * 0.1
     R = np.eye(1) * 0.5
     param0 = {'F': F, 'H': H, 'Q': Q, 'R': R}
 
-    sensitivity_test(param0)
+    print(f'spectrum of F: {np.linalg.eigvals(F)}')
+
+    if args.do_sensitivity_test:
+        sensitivity_test(param0)
+
+    if args.do_covariance_test:
+        _ = run_covariance_test(param0,
+                        trials=args.trials,
+                        Tmax=args.Tmax,
+                        bootstrap_samples=args.bootstrap_samples,
+                        seed=args.seed,
+                        missing_prob=args.cov_missing_prob)
+    if args.iterate_covariance_test:
+        all_results = []
+        for idx in range(args.covariance_test_iter):
+            print(f"\n=== Iteration {idx + 1} ===")
+            #generate new random parameters per iteration
+            F = np.random.uniform(0.5, 1.5, size=(2, 2))
+            H = np.random.uniform(0.1, 0.5, size=(1, 2))
+            Q = np.eye(2) * np.random.uniform(0.01, 2)
+            R = np.eye(1) * np.random.uniform(0.1, 2)
+            spectral_r = np.random.uniform(0.2, 0.99)
+            #check spectrum of F if unstable, rescale
+            eigs = np.linalg.eigvals(F)
+            F = F / np.max(np.abs(eigs)) * spectral_r
+            params = {'F': F, 'H': H, 'Q': Q, 'R': R}
+            res = run_covariance_test(params,
+                        trials=args.trials,
+                        Tmax=args.Tmax,
+                        bootstrap_samples=args.bootstrap_samples,
+                        seed=args.seed + 17 + idx,
+                        missing_prob=args.cov_missing_prob)
+            print(f"Results: {res}")
+            all_results.append(res)
+        #save results to a csv file
+        import pandas as pd
+        df = pd.DataFrame(all_results)
+        df.to_csv(args.cov_test_filename, index=False)
+
+
+# Example output:
+# $ python stat_utils.py --seed 42
+# Baseline state RMS: 0.4664,  Baseline obs RMS: 1.1405,  Avg Log‐L: -1.5552
+
+# Perturb  1: state RMS=1.6674 (Δ (negative is better) +1.2010), obs RMS=1.2161 (Δ  +0.0756), AvgLL=-1.6059 (Δ (positive is better) -0.0508)
+# Perturb  2: state RMS=1.2823 (Δ (negative is better) +0.8159), obs RMS=1.8612 (Δ  +0.7207), AvgLL=-2.2446 (Δ (positive is better) -0.6894)
+# Perturb  3: state RMS=1.3055 (Δ (negative is better) +0.8391), obs RMS=1.9708 (Δ  +0.8304), AvgLL=-2.5008 (Δ (positive is better) -0.9456)
+# Perturb  4: state RMS=0.8998 (Δ (negative is better) +0.4334), obs RMS=1.1865 (Δ  +0.0460), AvgLL=-1.5914 (Δ (positive is better) -0.0363)
+# Perturb  5: state RMS=1.0058 (Δ (negative is better) +0.5394), obs RMS=1.5378 (Δ  +0.3973), AvgLL=-1.9116 (Δ (positive is better) -0.3564)
+# Perturb  6: state RMS=1.2610 (Δ (negative is better) +0.7946), obs RMS=1.2130 (Δ  +0.0725), AvgLL=-1.6055 (Δ (positive is better) -0.0503)
+# Perturb  7: state RMS=2.2441 (Δ (negative is better) +1.7777), obs RMS=1.8071 (Δ  +0.6666), AvgLL=-2.0981 (Δ (positive is better) -0.5429)
+# Perturb  8: state RMS=0.8586 (Δ (negative is better) +0.3922), obs RMS=1.1965 (Δ  +0.0560), AvgLL=-1.5952 (Δ (positive is better) -0.0400)
+# Perturb  9: state RMS=1.1232 (Δ (negative is better) +0.6568), obs RMS=1.3182 (Δ  +0.1778), AvgLL=-1.6907 (Δ (positive is better) -0.1356)
+# Perturb 10: state RMS=0.9858 (Δ (negative is better) +0.5194), obs RMS=1.1501 (Δ  +0.0096), AvgLL=-1.5595 (Δ (positive is better) -0.0043)
+
+# === Covariance-based LL test ===
+#  Empirical-cov log-lik: -16434.7396
+#  Filter’s total  log-lik: -16394.4392
+#  Entropy-based negLL:   -16434.7396
+#  Bootstrap σ_LL:         65.7621
+#  Tolerance (3 σ):        ±197.2864
