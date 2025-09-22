@@ -10,6 +10,7 @@ class ToyObs:
         device = None,  # default to CPU
         dtype: torch.dtype = torch.float32,
         stationary_init: bool = False,
+        mask = None,
     ):
         self.T = int(n_steps)
         self.phi = float(phi)
@@ -18,9 +19,13 @@ class ToyObs:
         self.device = device if device is not None else torch.device("cpu")
         self.dtype = dtype
         self.stationary_init = bool(stationary_init)
+        self.mask = torch.tensor(mask, dtype=torch.bool, device=self.device) if mask is not None else None
 
         self._obs = None
         self._latent = None
+
+        if self.mask is not None:
+            assert len(self.mask) == self.T, "mask length must match n_steps"
 
     # ---- public API ----
     @torch.no_grad()
@@ -57,9 +62,12 @@ class ToyObs:
         # observations
         eps = torch.randn(T, device=self.device, dtype=self.dtype) * sigma_o
         y = x + eps
-
+        #replace masked values with NaN
+        if self.mask is not None:
+            y = y.masked_fill(~self.mask, float('nan'))
         self._latent = x
         self._obs = y
+
         return (y, x) if return_latents else y
 
     def get_density(self, obs = None, jitter: float = 1e-6) -> torch.Tensor:
@@ -79,9 +87,18 @@ class ToyObs:
         # small jitter for numerical stability
         Sigma = Sigma + torch.eye(self.T, device=self.device, dtype=self.dtype) * float(jitter)
 
+        if self.mask is not None:
+            # select only the unmasked entries
+            Sigma_ = Sigma[self.mask][:, self.mask]
+            y = y[self.mask]
+            T_ = y.numel()
+        else:
+            Sigma_ = Sigma
+            T_ = self.T
+
         mvn = torch.distributions.MultivariateNormal(
-            loc=torch.zeros(self.T, device=self.device, dtype=self.dtype),
-            covariance_matrix=Sigma,
+            loc=torch.zeros(T_, device=self.device, dtype=self.dtype),
+            covariance_matrix=Sigma_,
         )
         return mvn.log_prob(y)
 
