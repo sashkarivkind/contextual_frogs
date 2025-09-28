@@ -433,43 +433,28 @@ def build_targets_from_txt_or_csv(file_path: Path,
     return lst
 
 
-def build_piecewise_ys(t: int, device: torch.device, paradigm = 'er') -> List[Optional[torch.Tensor]]:
+def build_piecewise_ys(t: int, device: torch.device) -> List[Optional[torch.Tensor]]:
     """
     Mirrors the OCaml ys construction in your snippet.
     Each Some z becomes a tensor of shape [1] with that scalar.
     """
     ys: List[Optional[torch.Tensor]] = []
-    if paradigm == 'er':
-        for i in range(t):
-            if i < 50:
-                z = 0.0
-            elif i < 175:
-                z = 1.0
-            elif i < 190:
-                z = -1.0
-            elif i < 192:
-                ys.append(None)
-                continue
-            elif i < 194:
-                z = 1.0
-            else:
-                ys.append(None)
-                continue
-            ys.append(torch.tensor([z], device=device))
-    elif paradigm == 'sr':
-        for i in range(t):
-            if i < 50:
-                z = 0.0
-            elif i < 175:
-                z = 1.0
-            elif i < 190:
-                z = -1.0
-            else:
-                ys.append(None)
-                continue
-            ys.append(torch.tensor([z], device=device))
-    else:
-        raise ValueError("unknown paradigm")
+    for i in range(t):
+        if i < 50:
+            z = 0.0
+        elif i < 175:
+            z = 1.0
+        elif i < 190:
+            z = -1.0
+        elif i < 192:
+            ys.append(None)
+            continue
+        elif i < 194:
+            z = 1.0
+        else:
+            ys.append(None)
+            continue
+        ys.append(torch.tensor([z], device=device))
     return ys
 
 
@@ -499,7 +484,7 @@ def main(args):
 
     t = len(a_list) if args.t_episode is None else args.t_episode
     print(f"Data length T = {t}")
-    ys = build_piecewise_ys(t, device=device, paradigm = args.paradigm)
+    ys = build_piecewise_ys(t, device=device)
 
     # Model
     if args.reuse is not None and Path(args.reuse).exists():
@@ -594,7 +579,6 @@ if __name__ == "__main__":
     p.add_argument("--kl-warmup-iters", type=int, default=2000, help="Number of iterations for KL warmup (0 = no warmup)")
     p.add_argument("--assume-opt-output-noise", action="store_true", help="Assume output var noise = sigma_a^2 (else use empirical)")
     p.add_argument("--adam-epsilon", type=float, default=1e-8, help="Adam epsilon")
-    p.add_argument("--paradigm", choices=['er','sr'], default='er', help="paradigm er (evoked recovery) or sr (spontaneous recovery)")
 
     # Logging / saving
     p.add_argument("--print-params", action="store_true", help="Print model params every 10 iters")
