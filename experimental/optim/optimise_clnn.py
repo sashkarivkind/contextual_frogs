@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from gaussian import Gaussian, GaussianParams
+import pandas as pd
 
 import numpy as np
 import pandas as pd
@@ -67,6 +68,17 @@ def mymask(t: int):
     mask[t // 2:] = True
     mask[::10] = True
     return mask
+
+def load_subject_data(filename, ff_mult = 1./0.15):
+    df = pd.read_csv(filename)
+    a = df.Adaptation.to_numpy()
+    y = ff_mult * df.FieldConstants_1.to_numpy()
+    channel_trials  = np.logical_not(np.isnan(a))
+    y[channel_trials] = np.nan
+    q = df.ControlPoint.to_numpy() if 'ControlPoint' in df.columns else np.zeros_like(a)
+    q = np.float32(q)
+
+    return a, y, q
 
 FUDGE = 1e-4
 CUDA_INDEX_DEFAULT = 1  # Torch.Device.Cuda 1
@@ -150,8 +162,10 @@ class GenerativeModel(nn.Module):
         self.log_learning_rate = nn.Parameter(torch.full((1,), -6.0, device=device))  # bounded below -3 in OCaml; we ignore bound
         self.log_learning_rate_decay = nn.Parameter(torch.full((1,), 1e-5, device=device))
         self.sigma_b = nn.Parameter(torch.full((1,), 0.1, device=device))
+        
         self.output_scale = nn.Parameter(torch.full((1,), 1.0, device=device))
         self.log_weight_decay = nn.Parameter(torch.full((1,), -0.001, device=device))
+        self.q_scale = nn.Parameter(torch.full((1,), 1.0, device=device)) if args.enable_q_scale_tuning else torch.tensor(1.0, device=device, requires_grad=False)
         if not args.assume_opt_output_noise:
             self.sigma_a = nn.Parameter(torch.full((1,), 0.1, device=device)) if optimize_noises else torch.tensor(args.toymodel_OUsigma_obs, 
                                                                                                                        device=device, 
@@ -159,13 +173,25 @@ class GenerativeModel(nn.Module):
         self.sigma_x = nn.Parameter(torch.full((1,), 0.1, device=device)) if optimize_noises else torch.tensor(args.toymodel_OUsigma_process, 
                                                                                                                        device=device, 
                                                                                                                        requires_grad=False)
+
+        
+        self.tauqlpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_qlpf else torch.tensor(-1000, device=device, requires_grad=False)
+        self.tauylpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_ylpf else torch.tensor(-1000, device=device, requires_grad=False)
+
+
         self.register_buffer("_z_biases", torch.empty(0))  # base N(0,1) for biases
         self.register_buffer("_w_in", torch.empty(0))      # random input features
+        self.register_buffer("_w_inq", torch.empty(0))  # random input features for q
+
 
 
     @staticmethod
     def better_relu(x: torch.Tensor) -> torch.Tensor:
         return F.relu(x)
+    
+    @staticmethod
+    def softplus(x: torch.Tensor) -> torch.Tensor:
+        return torch.log1p(torch.exp(x))
 
     # def _sample_biases_and_w_in(self, n, bs, device):
     #     noise = torch.randn(n, device=device)          # no grad needed
@@ -179,17 +205,24 @@ class GenerativeModel(nn.Module):
             # (Re)create fixed random features/bias base draw
             self.register_buffer("_z_biases", torch.randn(n, device=device))
             self.register_buffer("_w_in", torch.randn(n, device=device))
+            self.register_buffer("_w_inq", torch.randn(n, device=device))
 
     def get_biases_and_w_in(self, n: int, device):
         self._ensure_random_features(n, device)
         biases = self.sigma_b.reshape(1) * self._z_biases  # scale base draw; grads flow to sigma_b
         return biases, self._w_in
+    
+    def get_winq(self, n: int, device):
+        self._ensure_random_features(n, device)
+        return self._w_inq
 
     def f(self,
           n: int,
           noises: List[torch.Tensor],   # list of [bs] tensors (one per time step)
           ys: List[Optional[torch.Tensor]],  # list of optional target tensors (shape [1] per OCaml)
-          model_setting: str) -> List[torch.Tensor]:
+          model_setting: str,
+          qs: Optional[List[Optional[torch.Tensor]]] = None,         
+          ) -> List[torch.Tensor]:
         """
         Port of the OCaml `Generative_model.f`.
         Returns a list of a_means (each shape [bs]) for each time step.
@@ -200,44 +233,47 @@ class GenerativeModel(nn.Module):
 
         # biases, w_in = self._sample_biases_and_w_in(n=n, bs=bs, dvice=device)
         biases, w_in = self.get_biases_and_w_in(n=n, device=device)
-#
+        prescaled_w_inq = self.get_winq(n=n, device=device) if qs is not None else None
 
         # state init
         w_out = torch.zeros(bs, n, device=device)
         u = torch.zeros(bs, device=device)
         x = torch.zeros(bs, device=device)
         e = torch.zeros(bs, device=device)
+        qlp = torch.zeros(1, device=device)
+        ylp = torch.zeros(1, device=device)
         lr = torch.exp(self.log_learning_rate).expand(bs)
 
-        a_means: List[torch.Tensor] = []
+        tauqlpf = 1.0 + self.softplus(self.tauqlpf_m1)
+        tauylpf = 1.0 + self.softplus(self.tauylpf_m1)
 
-        for y, noise_x in zip(ys, noises):
+        a_means: List[torch.Tensor] = []
+        for y, noise_x, q in zip(ys, noises,
+                                 qs if qs is not None else [torch.zeros((1,), device=device)]*len(ys)):
             if model_setting == "toy":
                 x = args.toymodel_OUphi * x + noise_x
                 a_means.append(1.0 * x)
 
             elif model_setting == "default":
-                if y is None:
-                    x = u + noise_x
-                    h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)))
-                    u = torch.einsum("kj,kj->k", w_out, h)  # rowwise dot
-                    a_mean = (self.output_scale * u).squeeze()
-                    w_out = (torch.exp(self.log_weight_decay) * w_out)
-                    a_means.append(a_mean)
-                else:
-                    x = u + e + noise_x
-                    h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)))
-                    u = torch.einsum("kj,kj->k", w_out, h)
-                    a_mean = (self.output_scale * u).squeeze()
-                    # update w_out
-                    # OCaml: e = broadcast_to(size u) y - u
-                    e = y.to(device).expand_as(u) - u
+                qlp = (1.0 - tauqlpf) * qlp + tauqlpf * q
+                scaled_q_in  = (prescaled_w_inq * self.q_scale * qlp).unsqueeze(0)  #[1, n]
+
+                x = u + e + (noise_x if args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
+                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
+                u = torch.einsum("kj,kj->k", w_out, h)
+                a_mean = (self.output_scale * u).squeeze() + (noise_x if args.noise_injection_node == 'a' else 0)
+                if y is not None:
+                    ylp = (1.0 - tauylpf) * ylp + tauylpf * y
+                    e = ylp.to(device).expand_as(u) - u
                     dw_out = (e.unsqueeze(1) * h) * lr.unsqueeze(1)
                     w_out = w_out + dw_out
                     norms = torch.sqrt(FUDGE + torch.einsum("ki->k", dw_out ** 2))
                     lr = lr * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
-                    w_out = (torch.exp(self.log_weight_decay) * w_out)
-                    a_means.append(a_mean)
+                else:
+                    e = torch.zeros_like(u, device=device)
+                w_out = (torch.exp(self.log_weight_decay) * w_out)
+                # keeping records
+                a_means.append(a_mean)
             else:
                 raise ValueError("unknown model setting")
 
@@ -276,16 +312,25 @@ def neg_elbo(beta: float,
              ys: List[Optional[torch.Tensor]],
              a: List[Optional[torch.Tensor]],
              klmethod: str,
+             qs: Optional[List[Optional[torch.Tensor]]] = None,
              return_a_means_hook: bool = False,
+             sample_from_prior: bool = False,
              debug_dict = None,
              ): #-> torch.Tensor: TODO: undebug
 
     device = next(theta.parameters()).device
 
+    #debug printout all the inputs
+    # print(f'neg_elbo inputs: beta={beta}, n={n}, bs={bs}, device={device}, ys={(ys)}, a={(a)}, klmethod={klmethod}, qs len={(len(qs) if qs is not None else "None")}')
+    # print(f' qs{((qs) if qs is not None else "None")}')
+
+    t = len(ys)
     # sample noise x_t ~ q (via reparam)
     if debug_dict is not None:
         # print('Using debug x_samples')
         x_samples = debug_dict['x_samples']
+    elif sample_from_prior:
+        x_samples = torch.randn((bs, t), device=device) * theta.gen.sigma_x  # [bs, t]
     else:
         x_samples = Gaussian.sample(theta.var.x(), bs)   # [bs, t]
     # split along time to a list of [bs] tensors
@@ -293,7 +338,8 @@ def neg_elbo(beta: float,
 
     # likelihood term
     # propagate through model
-    a_means = theta.gen.f(n=n, noises=noises, ys=ys, model_setting=args.model) 
+    # print(f'qs: {qs}')
+    a_means = theta.gen.f(n=n, noises=noises, ys=ys, qs=qs, model_setting=args.model) 
     # if return_a_means_hook:
     #     return a_means
 
@@ -373,7 +419,8 @@ def save_results(theta: FullModel,
                  ys: List[Optional[torch.Tensor]], 
                  n: int, 
                  incl_matrices: bool = True,
-                 a_list: Optional[List[Optional[torch.Tensor]]] = None ) -> None:
+                 a_list: Optional[List[Optional[torch.Tensor]]] = None,
+                 qs: Optional[List[Optional[torch.Tensor]]] = None) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Save parameters
@@ -395,23 +442,27 @@ def save_results(theta: FullModel,
         noises = [theta.var.x().mu[t_idx:t_idx+1] for t_idx in range(theta.var.x().mu.shape[0])]
         # Broadcast each to [bs] via tiny helper: we’ll use bs=1 for deterministic mean path
         noises = [z.expand(1) for z in noises]
-        a_pred_list = theta.gen.f(n=n, noises=noises, ys=ys, model_setting=args.model)
+        a_pred_list = theta.gen.f(n=n, noises=noises, ys=ys, model_setting=args.model,qs=qs)
         pred_a = torch.cat([z.reshape(1, 1) for z in a_pred_list], dim=0)  # [T,1]
         np.savetxt(outdir.joinpath("pred_a.txt"), pred_a.detach().cpu().numpy())
         if args.save_batch_of_trajs:
             with torch.no_grad():
-                loss,ll,kl,a_means = neg_elbo(beta=0.0,
-                                  n=n,
-                                  bs=args.bs,
-                                  theta=theta,
-                                  ys=ys,
-                                  a=a_list,
-                                  klmethod=args.klmethod,
-                                  return_a_means_hook=True)
-                np.savez(outdir.joinpath("pred_a_batch.npz"), **{'as':[this_a.cpu().numpy() for this_a in a_means], 
-                                                                 'loss':loss, 'nll':ll, 'kl':kl})
-                print(f'Saved batch of {args.bs} trajectories to {outdir.joinpath("pred_a_batch.npz")}')
-                print(f'loss={loss.item():.3e}, nll={ll.item():.3e}, kl={kl.item():.3e}')
+                for sample_from_prior in [True, False]:
+                    loss,ll,kl,a_means = neg_elbo(beta=1.0,
+                                    n=n,
+                                    bs=args.bs,
+                                    theta=theta,
+                                    ys=ys,
+                                    a=a_list,
+                                    klmethod=args.klmethod,
+                                    qs=qs,
+                                    sample_from_prior=sample_from_prior,
+                                    return_a_means_hook=True)
+                    file_name = "prior_a_batch.npz" if sample_from_prior else "pred_a_batch.npz"
+                    np.savez(outdir.joinpath(f"{file_name}"), **{'as':[this_a.cpu().numpy() for this_a in a_means], 
+                                                                    'loss':loss.cpu().numpy(), 'll':ll.cpu().numpy(), 'kl':kl.cpu().numpy()})
+                    print(f'Saved batch of {args.bs} trajectories to {outdir.joinpath(f"{file_name}")}')
+                print(f'eval (for sanity purposes): loss={loss.item():.3e}, nll={ll.item():.3e}, kl={kl.item():.3e}')
                 exit(0)
 
 def build_targets_from_txt_or_csv(file_path: Path,
@@ -483,7 +534,17 @@ def main(args):
 
     # Data & targets
     if not args.model == "toy":
-        a_list = build_targets_from_txt_or_csv(Path(args.data), device=device)
+        if args.load_ys_from_file:
+            a_list, ys, qs = load_subject_data(args.data)
+            a_list = [torch.tensor([z], device=device) if not np.isnan(z) else None for z in a_list]
+            ys = [torch.tensor([y], device=device) if not np.isnan(y) else None for y in ys]
+            qs = [torch.tensor([q], device=device) if not np.isnan(q) else None for q in qs]
+            # Enable q_scale tuning if any q is not zero, nan or None
+            args.enable_q_scale_tuning = any([ (q is not None) and (not torch.isnan(q).all()) and (not (q==0.0).all()) for q in qs])
+        else: #backward compatibility mode
+            a_list = build_targets_from_txt_or_csv(Path(args.data), device=device)
+            qs = [torch.zeros((1,), device=device) for _ in a_list]
+            print('warning: setting qs to zero by default.')
     else:
         toy_obs = ToyObs(n_steps=args.t_episode, 
                          phi=args.toydata_OUphi, 
@@ -499,15 +560,41 @@ def main(args):
 
     t = len(a_list) if args.t_episode is None else args.t_episode
     print(f"Data length T = {t}")
-    ys = build_piecewise_ys(t, device=device, paradigm = args.paradigm)
 
-    # Model
+    if not args.load_ys_from_file: #backward compatibility mode
+        ys = build_piecewise_ys(t, device=device, paradigm = args.paradigm)
+
+    # # Model
+    # if args.reuse is not None and Path(args.reuse).exists():
+    #     model = FullModel(t=t, device=device, args=args)
+    #     sd = torch.load(args.reuse, map_location=device)
+    #     model.load_state_dict(sd)
+    # else:
+    #     model = FullModel(t=t, device=device, args=args)
+
     if args.reuse is not None and Path(args.reuse).exists():
         model = FullModel(t=t, device=device, args=args)
         sd = torch.load(args.reuse, map_location=device)
-        model.load_state_dict(sd)
+
+        # Figure out the intended n in the checkpoint (safer if it differs from CLI)
+        ckpt_n = None
+        if "gen._w_in" in sd and isinstance(sd["gen._w_in"], torch.Tensor):
+            ckpt_n = sd["gen._w_in"].numel()
+
+        target_n = ckpt_n if ckpt_n is not None else args.n
+
+        # Prime the fixed random-feature buffers so shapes & keys match
+        model.gen._ensure_random_features(n=target_n, device=device)
+
+        if ckpt_n is not None and args.n != ckpt_n:
+            print(f"Warning: --n ({args.n}) != checkpoint n ({ckpt_n}). "
+                f"Using checkpoint n={ckpt_n} for consistency.")
+            # You may also want to set args.n = ckpt_n here if downstream code relies on it.
+
+        model.load_state_dict(sd)  # strict=True default
     else:
         model = FullModel(t=t, device=device, args=args)
+
 
     model.to(device)
 
@@ -531,7 +618,7 @@ def main(args):
     bs = args.bs
     n = args.n
     max_iter = args.max_iter
-    debug_dict = {'x_samples': model.var.x().mu.reshape(1, -1).expand(bs, -1)} 
+    # debug_dict = {'x_samples': model.var.x().mu.reshape(1, -1).expand(bs, -1)} 
     for it in range(max_iter + 1):
 
         for g in opt.param_groups:
@@ -545,6 +632,7 @@ def main(args):
                         theta=model,
                         ys=ys,
                         a=a_list,
+                        qs=qs,
                         klmethod=args.klmethod,
                         debug_dict=None,
                         )
@@ -558,8 +646,8 @@ def main(args):
 
         # if False: #TODO: undebug
         if it % args.save_every == 0: #TODO: cleanup and refactor
-            save_results(model, outdir, ys, n, incl_matrices=(it % args.save_matrices_every == 0),a_list=a_list)
             print({"t": it, "loss": loss_float, "log_lik": ll_float, "kl": kl_float,})
+            save_results(model, outdir, ys, n, incl_matrices=(it % args.save_matrices_every == 0),a_list=a_list, qs=qs)
             if args.print_params:
                 print(f' gen params: lr={torch.exp(model.gen.log_learning_rate).item():.3e}, decay={torch.exp(model.gen.log_learning_rate_decay).item():.3e}, '
                     f'sigma_b={model.gen.sigma_b.item():.3e}, sigma_a={model.gen.sigma_a.item():.3e}, '
@@ -594,7 +682,13 @@ if __name__ == "__main__":
     p.add_argument("--kl-warmup-iters", type=int, default=2000, help="Number of iterations for KL warmup (0 = no warmup)")
     p.add_argument("--assume-opt-output-noise", action="store_true", help="Assume output var noise = sigma_a^2 (else use empirical)")
     p.add_argument("--adam-epsilon", type=float, default=1e-8, help="Adam epsilon")
-    p.add_argument("--paradigm", choices=['er','sr'], default='er', help="paradigm er (evoked recovery) or sr (spontaneous recovery)")
+    p.add_argument("--paradigm", choices=['NA','er','sr'], default='NA', help="paradigm er (evoked recovery) or sr (spontaneous recovery)")
+    p.add_argument("--load-ys-from-file", action="store_true", help="Load ys and qs from data file (csv with Adaptation and FieldConstants_1 columns)")
+    # filtering
+    p.add_argument("--enable-qlpf", action="store_true", help="Enable q low-pass filter (tau_qlpf)")
+    p.add_argument("--enable-ylpf", action="store_true", help="Enable y low-pass filter (tau_ylpf)")
+    p.add_argument("--enable-q-scale-tuning", action="store_true", help="Enable tuning of q_scale (else fixed to 1.0)")
+
 
     # Logging / saving
     p.add_argument("--print-params", action="store_true", help="Print model params every 10 iters")
@@ -611,6 +705,11 @@ if __name__ == "__main__":
     p.add_argument("--optimize-toy-noises", action="store_true", 
                    help="Optimize sigma_a and sigma_x even in toy model (default: use fixed data params)")
     p.add_argument("--toydata-usemask", action="store_true", help="Use a mask for the toy data (half observed, every 10th in first half)")
+    
+    #noise injection node:
+    p.add_argument("--noise-injection-node", choices=['a','x'], default='x', help="Node to inject noise in: a (output) or x (state)")
+
+
     args = p.parse_args()
 
 

@@ -2,15 +2,15 @@
 set -euo pipefail
 
 # vals=(0.01 0.05 0.1 0.2)
-vals=(3 4 13)
-# vals=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
-seeds=(1 2 3)
+# vals=(3 4 13)
+vals=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
+seeds=(2 3 4 5)
 # seeds=(1 2 3 4 5)
 
 max_concurrent=20
 concurrents=0
 id=1
-outdirroot="results/realthing404seeds/"
+outdirroot="results/realthing403ctrl_seeds/"
 for p2 in "${seeds[@]}"; do
   for p1 in "${vals[@]}"; do
     outdir="${outdirroot}/run${p1}_seed${p2}"
@@ -34,12 +34,13 @@ for p2 in "${seeds[@]}"; do
       --bs 512 \
       --save-matrices-every 1000 \
       --enable-kl-grad \
-      --max-iter 40000  \
+      --max-iter 10000  \
       --scale-cholesky \
-      --lr 0.0001  \
+      --lr 0.001  \
       --assume-opt-output-noise \
       --cuda-index 0 --paradigm NA \
       --load-ys-from-file \
+      --noise-injection-node a \
       --seed "$p2" \
       &
       pid=$!

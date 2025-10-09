@@ -1,0 +1,500 @@
+   23  dune build src/sanity1.exe
+   24  dune build src/sanity1.exe
+   25  dune build src/sanity1.exe
+   26  dune build src/sanity1.exe
+   27  dune build src/sanity1.exe
+   28  ls
+   29  mkdir _results_sanity1
+   30  dune exec src/optimise_anakl.exe -- -d _results_sanity1-klmethod montecarlo
+   31  dune exec src/sanity1.exe -- -d _results_sanity1-klmethod montecarlo
+   32  dune exec src/sanity1.exe -- -d _results_sanity1-klmethod montecarlo
+   33  dune build src/sanity1.exe
+   34  dune exec src/sanity1.exe -- -d _results_sanity1-klmethod montecarlo
+   35  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   36  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   37  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   38  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   39  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   40  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   41  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   42  dune exec src/sanity1.exe -- -d _results_sanity1 -klmethod montecarlo
+   43  top
+   44  ls
+   45  tmux list sessions
+   46  tmux list-sessions
+   47  tmux 
+   48  conda activate py_frogs
+   49  cd experimental/clrl/
+   50  python cartpole101.py 
+   51  python cartpole102.py 
+   52  python cartpole101.py 
+   53  python cartpole102.py 
+   54  python cartpole102.py 
+   55  less cartpole102.py 
+   56  python cartpole101.py 
+   57  python cartpole102.py 
+   58  python cartpole102.py 
+   59  python cartpole102.py 
+   60  python cartpole102.py 
+   61  python invpend101.py 
+   62  python invpend101.py 
+   63  python invpend101.py 
+   64  python invpend201b.py 
+   65  python invpend201b.py 
+   66  python invpend202b.py 
+   67  python invpend202b.py 
+   68  python invpend202b.py 
+   69  python invpend202b.py 
+   70  top
+   71  lscpu 
+   72  ls
+   73  tmux
+   74  cd scratch/sasha-model-optimization/
+   75  source ~/.bashrc 
+   76  eval $(opam env)
+   77  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model toy
+   78  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model toy
+   79  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model toy
+   80  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model default
+   81  cd experimental/optim/results/hellopy/
+   82  less pred_a.txt 
+   83  top
+   84  ls
+   85  conda env frog_env
+   86  conda activate frog_env
+   87  conda info --envs
+   88  conda activate py_frogs
+   89  cd experimental/optim/
+   90  python optimise_clnn.py 
+   91  mkdir results
+   92  mkdir results/hellopy/
+   93  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy/
+   94  cd experimental/optim/
+   95  cp -r results/hellopy/ ~/scratch/sasha-model-optimization/_results_hellopy
+   96  ls ~/scratch/sasha-model-optimization/_results_hellopy
+   97  cp  ~/scratch/sasha-model-optimization/_results_hellopy/loss.csv ~/scratch/sasha-model-optimization/_results_hellopy/loss
+   98  cp  ~/scratch/sasha-model-optimization/_results_hellopy/pred_a.txt ~/scratch/sasha-model-optimization/_results_hellopy/pred_a
+   99  cd ~/scratch/sasha-model-optimization/
+  100  ls _results_temp5/
+  101  less _results_temp5/params.npz 
+  102  less _results_temp5/params.bin 
+  103  python
+  104  python
+  105  mkdir results/hellopy2/
+  106  conda activate frog_env
+  107  conda activate py_frogs
+  108  cd experimental/optim/
+  109  history | grep "python optimise_clnn.py"
+  110  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  111  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  112  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  113  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  114  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  115  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  116  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  117  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  118  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo
+  119  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo
+  120  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  121  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  122  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical 
+  123  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  124  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical
+  125  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  126  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  127  ls -h results/hellopy2/
+  128  ls -lh results/hellopy2/
+  129  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  130  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  131  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  132  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  133  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  134  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  135  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  136  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  137  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  138  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  139  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  140  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy
+  141  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --seed 43
+  142  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --seed 43
+  143  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy 
+  144  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516
+  145  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516
+  146  conda activate py_frogs
+  147  cd experimental/optim/
+  148  python gaussian.py 
+  149  python gaussian.py 
+  150  python gaussian.py 
+  151  python gaussian.py 
+  152  python gaussian.py 
+  153  ls
+  154  ls
+  155  python gaussian.py 
+  156  python gaussian.py 
+  157  python gaussian.py 
+  158  python gaussian.py 
+  159  python gaussian.py 
+  160  mkdir results/hellopy2/
+  161  less results/hellopy2/post_mu.txt 
+  162  less results/hellopy2/post_sigma.txt 
+  163  pwd
+  164  python gaussian.py 
+  165  python gaussian.py 
+  166  conda activate py_frogs
+  167  conda activate py_frogs
+  168  ls
+  169  tmux
+  170  tmux
+  171  conda activate py_frogs
+  172  cd experimental/optim/
+  173  ls
+  174  mkdir results/realthing2048/
+  175  export CUDA_VISIBLE_DEVICES=1
+  176  top
+  177  nvidia-smi
+  178  conda activate py_frogs
+  179  cd experimental/optim/
+  180  mkdir results/realthing512
+  181  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/realthing512/ --klmethod montecarlo --bs 512 --save-matrices-every 100 
+  182  top
+  183  top
+  184  nvidia-smi
+  185  top
+  186  conda activate py_frogs
+  187  cd experimental/optim/
+  188  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t_episode 10
+  189  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10
+  190  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10
+  191  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10
+  192  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10
+  193  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 100
+  194  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 100
+  195  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 100
+  196  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 100 --nable-kl-grad
+  197  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10 --nable-kl-grad
+  198  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10 --enable-kl-grad
+  199  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10
+  200  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 300 --enable-kl-grad
+  201  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 300 --enable-kl-grad --save-matrices-every 1000
+  202  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 300 --enable-kl-grad --save-matrices-every 1000
+  203  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 300 --enable-kl-grad --save-matrices-every 1000
+  204  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 50 --enable-kl-grad --save-matrices-every 1000
+  205  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 50 --save-matrices-every 1000
+  206  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 50 --enable-kl-grad --save-matrices-every 1000
+  207  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 50 --enable-kl-grad --save-matrices-every 1000
+  208  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 50  --save-matrices-every 1000
+  209  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 50  --save-matrices-every 1000
+  210  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 300  --save-matrices-every 1000
+  211  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 64 --t-episode 300  --save-matrices-every 1000
+  212  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 64 --t-episode 50 --enable-kl-grad --save-matrices-every 1000
+  213  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 64 --t-episode 300 --enable-kl-grad --save-matrices-every 1000
+  214  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 50  --save-matrices-every 1000
+  215  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 50  --save-matrices-every 1000 --optimize-toy-noises
+  216  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 50  --save-matrices-every 1000 --optimize-toy-noises   --enable-kl-grad
+  217  mkdir results/hellopy3/
+  218  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy3/ --klmethod montecarlo --model toy --bs 516 --t-episode 50  --save-matrices-every 1000 --optimize-toy-noises  
+  219  mkdir results/recover300ptsMonte512detach/
+  220  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover300ptsMonte512detach/ --klmethod montecarlo --model toy --bs 516 --t-episode 300  --save-matrices-every 1000 --optimize-toy-noises  
+  221  mkdir results/recover300ptsMonte64detach/
+  222  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover300ptsMonte64detach/ --klmethod montecarlo --model toy --bs 64 --t-episode 300  --save-matrices-every 1000 --optimize-toy-noises  --
+  223  mkdir results/recover300ptsMonte64detachPro0p05Obs0p1/
+  224  mkdir results/recover300ptsMonte512detachPro0p05Obs0p1/
+  225  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover300ptsMonte512detachPro0p05Obs0p1/ --klmethod montecarlo --model toy --bs 512 --t-episode 300  --save-matrices-every 1000 --optimize-toy-noises  --toymodel-OUsigma_process 0.05 --toymodel-OUsigma_obs 0.1
+  226  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover300ptsMonte512detachPro0p05Obs0p1/ --klmethod montecarlo --model toy --bs 512 --t-episode 300  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1
+  227  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover100ptsMonte512detachPro0p05Obs0p1/ --klmethod montecarlo --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1
+  228  mkdir results/recover100ptsMonte512detachPro0p05Obs0p1/
+  229  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover100ptsMonte512detachPro0p05Obs0p1/ --klmethod montecarlo --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1
+  230  mkdir results/recover10ptsMonte512detachPro0p05Obs0p1/
+  231  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover10ptsMonte512detachPro0p05Obs0p1/ --klmethod montecarlo --model toy --bs 512 --t-episode 10  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1
+  232  mkdir results/recoverTemp/
+  233  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp/ --klmethod montecarlo --model toy --bs 512 --t-episode 10  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.1 -tdso 0.05
+  234  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp/ --klmethod montecarlo --model toy --bs 512 --t-episode 10  --save-matrices-every 1000 --optimize-toy-noises  
+  235  history
+  236  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t_episode 10
+  237  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t_episode 10
+  238  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod analytical --model toy --bs 516 --t-episode 10
+  239  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 10
+  240  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises 
+  241  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/hellopy2/ --klmethod montecarlo --model toy --bs 516 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises --print-params
+  242  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp/ --klmethod montecarlo --model toy --bs 512 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises --print-params
+  243  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp/ --klmethod montecarlo --model toy --bs 512 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises --print-params
+  244  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp/ --klmethod analytic --model toy --bs 512 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises --print-params
+  245  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp/ --klmethod analytical --model toy --bs 512 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises --print-params
+  246  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp/ --klmethod analytical --model toy --bs 512 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises --print-params --enable-kl-grad
+  247  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recoverTemp_/ --klmethod analytical --model toy --bs 512 --t-episode 10 --save-matrices-every 1000 --optimize-toy-noises --print-params --enable-kl-grad
+  248  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover10ptsAna512detachPro0p05Obs0p1/ --klmethod analytical --model toy --bs 512 --t-episode 10  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  249  mkdir results/recover100ptsAna512detachPro0p05Obs0p1/
+  250  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover10ptsAna512detachPro0p05Obs0p1/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  251  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover100ptsAna512attachPro0p05Obs0p/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  252  mkdir results/recover100ptsAna512attachPro0p05Obs0p1/
+  253  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover100ptsAna512attachPro0p05Obs0p/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  254  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover100ptsAna512attachPro0p05Obs0p1/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  255  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/recover100ptsAna512attachPro0p05Obs0p1/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.5 -tdso 1.  --enable-kl-grad
+  256  tmux attach-session -t 5
+  257  testmux list-sessions
+  258  tmux list-sessions
+  259  tmux attach 4
+  260  tmux attach-session 4
+  261  tmux attach-session -t 4
+  262  cd experimental/optim/
+  263  ls results/realthing4096anaNoBlock/
+  264  ls results/realthing4096monteNoBlock/
+  265  top
+  266  conda activate py_frogs
+  267  cd experimental/optim/
+  268  ls
+  269  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  270  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  271  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20
+  272  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20
+  273  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20
+  274  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana2/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad
+  275  bash recoverysweep101.sh 
+  276  bash recoverysweep102.sh 
+  277  bash recoverysweep102.sh 
+  278  conde activate py_frogs
+  279  conda activate py_frogs
+  280  cd experimental/optim/
+  281  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20
+  282  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20
+  283  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale_cholesky
+  284  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  285  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  286  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 -
+  287  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  288  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  289  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  290  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  291  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  292  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  293  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  294  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  295  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  296  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  297  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  298  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 
+  299  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  300  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  301  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  302  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 3  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  303  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  304  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad --max-iter 20 --scale-cholesky
+  305  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky
+  306  tmux attach-session -t 4
+  307  tmux attach-session -t 5
+  308  tmux attach-session -t 4
+  309  less experimental/optim/optimise_clnn.py 
+  310  conde activate py_frogs
+  311  conda activate py_frogs
+  312  cd experimental/optim/
+  313  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky
+  314  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 0
+  315  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 0 --assume-opt-output-noise
+  316  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise
+  317  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise
+  318  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise
+  319  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --seed 1 --assume-opt-output-noise
+  320  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise
+  321  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.3 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise
+  322  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise
+  323  ls results/ -lth
+  324  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise  --toydata-usemask
+  325  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise  --toydata-usemask
+  326  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise  --toydata-usemask
+  327  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise  --toydata-usemask
+  328  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise
+  329  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --seed 1 --assume-opt-output-noise  --toydata-usemask
+  330  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --optimize-toy-noises  -tdsp 0.05 -tdso 0.1  --enable-kl-grad  --scale-cholesky --seed 1 --assume-opt-output-noise  --toydata-usemask
+  331  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 100  --save-matrices-every 1000 --enable-kl-grad  --seed 1 --assume-opt-output-noise  --toydata-usemask
+  332  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 512 --t-episode 120  --save-matrices-every 1000 --enable-kl-grad  --seed 1 --assume-opt-output-noise  --toydata-usemask
+  333  tmux attach-session -t 4
+  334  conda activate py_frogs
+  335  cd experimental/optim/
+  336  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 4096 --t-episode 1120  --save-matrices-every 1000 --enable-kl-grad  --seed 1 --assume-opt-output-noise  --toydata-usemask
+  337  python optimise_clnn.py --data ~/scratch/sasha-model-optimization/_data_er5/test  --out-dir results/tempBanana/ --klmethod analytical --model toy --bs 32768 --t-episode 1120  --save-matrices-every 1000 --enable-kl-grad  --seed 1 --assume-opt-output-noise  --toydata-usemask
+  338  tmux attach-session -t 5
+  339  tmux attach-session -t 4
+  340  cd experimental/optim/
+  341  ls results/
+  342  top
+  343  nvidia-smi
+  344  top
+  345  nvidia-smi
+  346  nvidia-smi
+  347  top
+  348  nvidia-smi
+  349  less 
+  350  less ~/frogs_project/coinBICs100r1000p.csv 
+  351  less -R ~/ | grep txt | less
+  352  less -R ~/ | grep txt
+  353  less -R ~/. | grep txt
+  354  less -R ~/frogs_project/ | grep txt
+  355  ls -R ~/ | grep txt | less
+  356  find COIN_bics.txt ~/.
+  357  find ~/. -name "COIN_bics.txt"
+  358  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  359  tmux attach-session -t 4
+  360  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  361  tmux attach-session -t 4
+  362  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  363  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  364  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  365  cd experimental/optim/
+  366  ls
+  367  mkdir results/temp2
+  368  ls  results/temp2
+  369  ls  results/temp2/run8/
+  370  less  results/temp2/run8/loss.csv 
+  371  mkdir results/realthing401a/
+  372  tmux attach-session -t 4
+  373  ls results/
+  374  cd experimental/optim/
+  375  ls
+  376  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  377  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  378  top
+  379  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant20.csv 
+  380  tmux attach-session -t 5
+  381  tmux attach-session -t 4
+  382  pwd
+  383  cd experimental/optim/
+  384  cd results/
+  385  ls
+  386  pwd
+  387  ls realthing4096anaNoBlock
+  388  ls
+  389  top
+  390  top
+  391  ls
+  392  ls tempBanana/
+  393  less tempBanana/config.json 
+  394  less tempBanana/toysynth_density.txt 
+  395  less tempBanana/log.csv 
+  396  pwd
+  397  ls
+  398  ls tempBanana2 
+  399  less tempBanana2/params.pt 
+  400  mkdir recoverysweep101a
+  401  ls recoverysweep101a/
+  402  ls recoverysweep101a/run1
+  403  ls recoverysweep101a/run2
+  404  ls recoverysweep101a/run2
+  405  less recoverysweep101a/run2/log.csv 
+  406  ls
+  407  tmux attach-session -t 4
+  408  ls
+  409  less /homes/ar2342/./one_more_dir/results/COIN_bics.txt
+  410  cd experimental/optim/
+  411  mkdir results/realthing401b
+  412  nvidia-smi
+  413  kill 637984 637986  637988   637990 637993  637995 637997  637999
+  414  rm -rf results/realthing401b
+  415  mkdir results/realthing401b
+  416  nvidia-smi
+  417  top
+  418  tmux attach-session -t 4
+  419  eval $(opam env)
+  420  cd ~/scratch/sasha-model-optimization/
+  421  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model toy
+  422  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo
+  423  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model default
+  424  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model default -bs 512
+  425  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model default -bs 512
+  426  dune exec src/optimise_anakl.exe -- -d _results_temp -data _data/test -klmethod montecarlo -model default -bs 512
+  427  top
+  428  top
+  429  top
+  430  cd experimental/optim/
+  431  ls
+  432  less results/realthing401a/run1
+  433  ls -lth results/realthing401a/run1/
+  434  ls -lth results/realthing401a/run2
+  435  ls -lth results/realthing401a/run3
+  436  top
+  437  ls -lth results/realthing401a/run3
+  438  ls -lth results/realthing401a/run3/log.csv 
+  439  less results/realthing401a/run3/log.csv 
+  440  less results/realthing401a/run1/log.csv 
+  441  less results/realthing401a/run1/loss.csv 
+  442  top
+  443  top
+  444  top
+  445  top
+  446  top
+  447  top
+  448  nvidia-smi
+  449  nvidia-smi
+  450  nvidia-smi
+  451  kill 152124 152136 152140 152154
+  452  nvidia-smi
+  453  asdas
+  454  tmux attach-session -t 4
+  455  cd experimental/optim/results/
+  456  ls
+  457  mkdir realthing401ab
+  458  cp -r realthing401a/* realthing401ab/.
+  459  cp -r realthing401b/* realthing401ab/.
+  460  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv
+  461  wc -l /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv
+  462  wc -l /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant2.csv
+  463  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv
+  464  tmux attach-session -t 4
+  465  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv
+  466  grep Triplet /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv | less
+  467  grep Triplet /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant2.csv | less
+  468  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv
+  469  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_spontaneous_recovery_participant1.csv
+  470  ls
+  471  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv
+  472  nvidia-smi
+  473  tmux attach-session -t 4
+  474  tmux attach-session -t 4
+  475  less /homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant1.csv
+  476  tmux attach-session -t 4
+  477  ls
+  478  tmux attach-session -t 4
+  479  top
+  480  nvidia-smi
+  481  pwd
+  482  nvidia-smi
+  483  nvidia-smi
+  484  nvidia-smi
+  485  nvidia-smi
+  486  top
+  487  ls
+  488  ls
+  489  top
+  490  nvidia-smi
+  491  ls
+  492  tmux attach-session -t 4
+  493  tmux attach-session -t 4
+  494  tmux attach-session -t 4
+  495  less experimental/optim/results/pilot_mem_upd_2/log.csv 
+  496  less experimental/optim/results/pilot_mem_upd_1/log.csv 
+  497  tmux attach-session -t 4
+  498  nvidia-smi
+  499  nvidia-smi
+  500  cd experimental/optim/
+  501  ls
+  502  ls
+  503  conda activate py_frogs
+  504      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1 --save-batch-of-trajs --reuse results/realthing403seeds/run1_seed1/params.pt 
+  505      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1 --save-batch-of-trajs --reuse results/realthing403seeds/run1_seed1/params.pt 
+  506      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1 --save-batch-of-trajs --reuse results/realthing403seeds/run1_seed1/params.pt 
+  507  less results/realthing403seeds/run1_seed1/log.csv 
+  508      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1  --reuse results/realthing403seeds/run1_seed1/params.pt 
+  509  less results/realthing403seeds/run1_seed1/log.csv 
+  510      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1 --save-batch-of-trajs --reuse results/realthing403seeds/run1_seed1/params.pt 
+  511      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1 --save-batch-of-trajs --reuse results/realthing403seeds/run1_seed1/params.pt 
+  512      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1 --save-batch-of-trajs --reuse results/realthing403seeds/run1_seed1/params.pt 
+  513      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant5.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 2 --save-batch-of-trajs --reuse results/realthing403seeds/run5_seed2/params.pt 
+  514      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1  --reuse results/realthing403seeds/run1_seed1/params.pt 
+  515      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1  --reuse results/realthing403seeds/run1_seed1/params.pt 
+  516  less optimise_clnn.py 
+  517  less optimise_clnn.py 
+  518      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1  --reuse results/realthing403seeds/run1_seed1/params.pt 
+  519      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant1.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 1  --reuse results/realthing403seeds/run1_seed1/params.pt 
+  520  less optimise_clnn.py 
+  521      python optimise_clnn.py --data  ~/frogs_project/data/COIN_data/trial_data_evoked_recovery_participant5.csv       --out-dir results/temp/        --klmethod analytical       --bs 512       --save-matrices-every 1000       --enable-kl-grad       --max-iter 40000        --scale-cholesky       --lr 0.001        --assume-opt-output-noise       --cuda-index 0 --paradigm NA       --load-ys-from-file       --seed 2 --save-batch-of-trajs --reuse results/realthing403seeds/run5_seed2/params.pt 
+  522  history  > temp_hist.txt
