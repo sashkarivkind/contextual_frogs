@@ -1,49 +1,50 @@
-anaconda-anon-usage @ file:///croot/anaconda-anon-usage_1732732445543/work
-annotated-types @ file:///croot/annotated-types_1709542908624/work
-archspec @ file:///croot/archspec_1709217642129/work
-boltons @ file:///croot/boltons_1737061692168/work
-Brotli @ file:///croot/brotli-split_1736182456865/work
-certifi @ file:///croot/certifi_1738623731865/work/certifi
-cffi @ file:///croot/cffi_1736182485317/work
-charset-normalizer @ file:///croot/charset-normalizer_1721748349566/work
-conda @ file:///croot/conda_1738168370816/work
-conda-anaconda-telemetry @ file:///croot/conda-anaconda-telemetry_1736524596117/work
-conda-anaconda-tos @ file:///croot/conda-anaconda-tos_1739298990519/work
-conda-content-trust @ file:///croot/conda-content-trust_1714483159009/work
-conda-libmamba-solver @ file:///croot/conda-libmamba-solver_1737733694612/work/src
-conda-package-handling @ file:///croot/conda-package-handling_1731369017509/work
-conda_package_streaming @ file:///croot/conda-package-streaming_1731366181659/work
-cryptography @ file:///croot/cryptography_1732129644106/work
-distro @ file:///croot/distro_1714488253808/work
-frozendict @ file:///croot/frozendict_1713194832637/work
-idna @ file:///croot/idna_1714398848350/work
+anaconda-anon-usage==0.5.0
+annotated-types==0.6.0
+archspec==0.2.3
+boltons==24.1.0
+Brotli==1.0.9
+certifi==2025.1.31
+cffi==1.17.1
+charset-normalizer==3.3.2
+conda==25.1.1
+conda-anaconda-telemetry==0.1.2
+conda-anaconda-tos==0.1.2
+conda-content-trust==0.2.0
+conda-libmamba-solver==25.1.1
+conda-package-handling==2.4.0
+conda_package_streaming==0.11.0
+cryptography==43.0.3
+distro==1.9.0
+frozendict==2.4.2
+idna==3.7
 Jinja2==3.1.6
-jsonpatch @ file:///croot/jsonpatch_1714483231291/work
+jsonpatch==1.33
 jsonpointer==2.1
-libmambapy @ file:///croot/mamba-split_1734469461757/work/libmambapy
-markdown-it-py @ file:///work/perseverance-python-buildout/croot/markdown-it-py_1698846045803/work
+libmambapy==2.0.5
+markdown-it-py==2.2.0
 MarkupSafe==3.0.2
-mdurl @ file:///work/perseverance-python-buildout/croot/mdurl_1698845653285/work
-menuinst @ file:///croot/menuinst_1738943416351/work
+mdurl==0.1.0
+menuinst==2.2.0
 numpy==2.3.2
-packaging @ file:///croot/packaging_1734472117206/work
-platformdirs @ file:///work/perseverance-python-buildout/croot/platformdirs_1701732573265/work
-pluggy @ file:///croot/pluggy_1733169602837/work
-pycosat @ file:///croot/pycosat_1736868416091/work
-pycparser @ file:///tmp/build/80754af9/pycparser_1636541352034/work
-pydantic @ file:///croot/pydantic_1734736067156/work
-pydantic_core @ file:///croot/pydantic-core_1734726052986/work
-Pygments @ file:///work/perseverance-python-buildout/croot/pygments_1698846270603/work
-PySocks @ file:///work/perseverance-python-buildout/croot/pysocks_1698845478203/work
+packaging==24.2
+pip==25.2
+platformdirs==3.10.0
+pluggy==1.5.0
+pycosat==0.6.6
+pycparser==2.21
+pydantic==2.10.3
+pydantic_core==2.27.1
+Pygments==2.15.1
+PySocks==1.7.1
 PyYAML==6.0.2
-requests @ file:///croot/requests_1730999120400/work
-rich @ file:///croot/rich_1732638981168/work
-ruamel.yaml @ file:///croot/ruamel.yaml_1727980156079/work
-ruamel.yaml.clib @ file:///croot/ruamel.yaml.clib_1727769819935/work
+requests==2.32.3
+rich==13.9.4
+ruamel.yaml==0.18.6
+ruamel.yaml.clib==0.2.8
 setuptools==75.8.0
-tqdm @ file:///croot/tqdm_1738943501192/work
-truststore @ file:///croot/truststore_1736550121485/work
-typing_extensions @ file:///croot/typing_extensions_1734714854207/work
-urllib3 @ file:///croot/urllib3_1737133630106/work
+tqdm==4.67.1
+truststore==0.10.0
+typing_extensions==4.12.2
+urllib3==2.3.0
 wheel==0.45.1
-zstandard @ file:///croot/zstandard_1731356346222/work
+zstandard==0.23.0
