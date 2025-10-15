@@ -175,6 +175,9 @@ class ElboGenerativeModelDualRate(nn.Module):
     
         self.sigma_x = nn.Parameter(torch.full((1,), 0.1, device=device)) 
         self.fudge = fudge
+        if args.noise_injection_node not in ['x', 'a']:
+            raise ValueError("noise_injection_node for Dual Rate model must be one of 'x', 'a'")
+        self.args = args
 
 
     @staticmethod
@@ -194,58 +197,29 @@ class ElboGenerativeModelDualRate(nn.Module):
         """
         assert len(noises) == len(ys), "noises and ys must have same length"
         bs = noises[0].shape[0]
-        device = self.log_learning_rate.device
+        device = self.aslow.device
 
         # biases, w_in = self._sample_biases_and_w_in(n=n, bs=bs, dvice=device)
 
 
         # state init
-        u = torch.zeros(bs, device=device)
-        x = torch.zeros(bs, device=device)
+        xs = torch.zeros(bs, device=device)
+        xf = torch.zeros(bs, device=device)
         e = torch.zeros(bs, device=device)
-        lr_mult = torch.ones(bs, device=device)
-        qlp = torch.zeros(1, device=device)
-        ylp = torch.zeros(1, device=device)
-        lr0 = torch.exp(self.log_learning_rate).expand(bs)
-        lr = lr0 * lr_mult
-
-        tauqlpf = 1.0 + self.softplus(self.tauqlpf_m1)
-        tauylpf = 1.0 + self.softplus(self.tauylpf_m1)
 
         a_means: List[torch.Tensor] = []
-        for y, noise_x, q in zip(ys, noises,
-                                 qs if qs is not None else [torch.zeros((1,), device=device)]*len(ys)):
-            #if y is np.nan convert to None (y might be a torch tensor or a numpy scalar)
-            if y is not None and (isinstance(y, float) and np.isnan(y)):
-                y = None
-            if model_setting == "toy":
-                x = self.args.toymodel_OUphi * x + noise_x
-                a_means.append(1.0 * x)
+        for y, noise_x in zip(ys, noises):
 
-            elif model_setting == "default":
-                qlp = (1.0 - tauqlpf) * qlp + tauqlpf * q
-                scaled_q_in  = (prescaled_w_inq * self.q_scale * qlp).unsqueeze(0)  if prescaled_w_inq is not None else 0 #TODO: refactor
-
-                x = u + e + (noise_x if self.args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
-                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
-                u = torch.einsum("kj,kj->k", w_out, h) + (noise_x if self.args.noise_injection_node == 'u' else 0)
-                a_mean = (self.output_scale * u).squeeze() + (noise_x if self.args.noise_injection_node == 'a' else 0)
+                xs = self.aslow * xs + self.bslow * e + (noise_x if self.args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
+                xf = self.afast * xf + self.bfast * e 
+                u = xs + xf 
                 if y is not None: 
-                    ylp = (1.0 - tauylpf) * ylp + tauylpf * y
-                    e = ylp.to(device).expand_as(u) - u
-                    dw_out = (e.unsqueeze(1) * h) * lr.unsqueeze(1)
-                    w_out = w_out + dw_out
-                    norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
-                    lr_mult = lr_mult * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
-                    lr = lr0 * lr_mult
+                    e = y - u
                 else:
                     e = torch.zeros_like(u, device=device)
-                w_out = (torch.exp(self.log_weight_decay * (lr_mult if self.args.model_tie_lr_weight_decay else 1.0)).unsqueeze(1) * w_out)
                 # keeping records
+                a_mean = u + (noise_x if self.args.noise_injection_node == 'a' else 0)
                 a_means.append(a_mean)
-            else:
-                raise ValueError("unknown model setting")
-
         return a_means
 
 

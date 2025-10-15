@@ -17,7 +17,7 @@ from torch import nn
 from torch.nn import functional as F
 from toymodels import ToyObs
 import json
-from models import ElboGenerativeModelTop
+from models import ElboGenerativeModelTop, ElboGenerativeModelDualRate
 from types import SimpleNamespace
 import pickle
 # ------------------------------
@@ -103,7 +103,10 @@ class Variational(nn.Module):
 class FullModel(nn.Module):
     def __init__(self, t: int, device: torch.device, args=None, fudge=1e-4):
         super().__init__()
-        self.gen = ElboGenerativeModelTop(device, args=args)
+        if args.model == "dual-rate":
+            self.gen = ElboGenerativeModelDualRate(device, args=args)
+        else:
+            self.gen = ElboGenerativeModelTop(device, args=args)
         self.var = Variational(t,
                                 device,
                                 args=args,
@@ -501,7 +504,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("-o", "--out-dir", type=str, default="./out", help="Output directory (OCaml: -d)")
     p.add_argument("--data", required=True, help="Path to .txt (one number per line) or a csv file with Adaptation column for real data")
-    p.add_argument("--model", choices=["default", "toy"], default="default", help="Model setting")
+    p.add_argument("--model", choices=["default", "toy", "dual-rate"], default="default", help="Model setting")
     p.add_argument("--klmethod", choices=["analytical", "montecarlo"], default="montecarlo")
     p.add_argument("--reuse", type=str, default=None, help="Load parameters from a previous run (.pt)")
     p.add_argument("--cuda-index", type=int, default=0)

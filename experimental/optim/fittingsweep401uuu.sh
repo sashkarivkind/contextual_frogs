@@ -10,7 +10,8 @@ seeds=(1 2 3 4 5)
 max_concurrent=20
 concurrents=0
 id=1
-outdirroot="results/realthing403uuu_seedsFX/"
+# outdirroot="results/realthing403uuu_seedsFX/"
+outdirroot="results/realthing403dualxxx_seedsFX/"
 for p2 in "${seeds[@]}"; do
   for p1 in "${vals[@]}"; do
     outdir="${outdirroot}/run${p1}_seed${p2}"
@@ -40,8 +41,9 @@ for p2 in "${seeds[@]}"; do
       --assume-opt-output-noise \
       --cuda-index 0 --paradigm NA \
       --load-ys-from-file \
-      --noise-injection-node u \
+      --noise-injection-node x \
       --model-tie-lr-weight-decay \
+      --model dual-rate \
       --seed "$p2" \
       &
       pid=$!
