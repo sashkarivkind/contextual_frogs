@@ -5,13 +5,13 @@ set -euo pipefail
 # vals=(3 4 13)
 vals=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
 # seeds=(1 2 3)
-seeds=(1 2 3 4 5)
+seeds=(1 ) # 2 3 4 5)
 
 max_concurrent=5
 concurrents=0
 id=1
-outdirroot="results/realthing403finalpreds/"
-source_outdirroot="results/realthing403seeds/"
+outdirroot="results/realthing403uuu_finalpredsFX/"
+source_outdirroot="results/realthing403uuu_seedsFX/"
 for p2 in "${seeds[@]}"; do
   for p1 in "${vals[@]}"; do
     outdir="${outdirroot}/run${p1}_seed${p2}"
@@ -43,9 +43,12 @@ for p2 in "${seeds[@]}"; do
       --cuda-index 0 --paradigm NA \
       --load-ys-from-file \
       --seed "$p2" \
-      --save-batch-of-trajs \
       --reuse "$source_outdir/"/params.pt \
+       --eval-only --paradigm-file ../../signoffrepertoire1.pkl  \
+        --model-tie-lr-weight-decay \
       &
+            # --save-batch-of-trajs \
+
       pid=$!
       echo "$pid" >> "$outdirroot/pids.txt"
       concurrents=$((concurrents + 1))

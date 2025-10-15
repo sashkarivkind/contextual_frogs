@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import sys
+sys.path.append("../../") 
 
 import argparse
 import math
@@ -10,15 +12,14 @@ from gaussian import Gaussian, GaussianParams
 import pandas as pd
 
 import numpy as np
-import pandas as pd
 import torch
 from torch import nn
 from torch.nn import functional as F
 from toymodels import ToyObs
 import json
-
+from models import ElboGenerativeModelTop
 from types import SimpleNamespace
-
+import pickle
 # ------------------------------
 # Utilities & defaults
 # ------------------------------
@@ -37,27 +38,6 @@ def get_device(cuda_index: int = 0) -> torch.device:
             f"Requested cuda:{cuda_index} but only {torch.cuda.device_count()} visible."
         )
     return torch.device(f"cuda:{cuda_index}")
-
-
-def ones_like_shape(shape: Tuple[int, ...], device):
-    return torch.ones(shape, device=device)
-
-
-def randn_like_shape(shape: Tuple[int, ...], device):
-    return torch.randn(shape, device=device)
-
-
-def zeros_like_shape(shape: Tuple[int, ...], device):
-    return torch.zeros(shape, device=device)
-
-
-def broadcast_to(x: torch.Tensor, size: Tuple[int, ...]) -> torch.Tensor:
-    return x.expand(size)
-
-
-def norm(x: torch.Tensor) -> float:
-    with torch.no_grad():
-        return torch.sqrt(torch.mean(x ** 2)).item()
 
 def mymask(t: int):
     '''
@@ -80,14 +60,6 @@ def load_subject_data(filename, ff_mult = 1./0.15):
 
     return a, y, q
 
-FUDGE = 1e-4
-CUDA_INDEX_DEFAULT = 1  # Torch.Device.Cuda 1
-
-
-
-# ------------------------------
-# Gaussian distributions
-# ------------------------------
 
 
 # ------------------------------
@@ -118,166 +90,10 @@ class Variational(nn.Module):
         return out
     
 
-# class Variational(nn.Module):
-#     """
-#     OCaml:
-#     type 'g p = { x : 'g }
-#     Here 'g is GaussianParams.
-#     """
-#     def __init__(self, t: int, device: torch.device, args=None, scale_for_cholesky=None):
-#         super().__init__()
-#         mu = torch.zeros(t, device=device)
-#         sigma12 = torch.eye(t, device=device)
-#         self.x_ = GaussianParams(mu, sigma12)
-#         self.args = args
-#         self.scale_for_cholesky = scale_for_cholesky
-
-#         out = SimpleNamespace()
-#         if self.scale_for_cholesky is not None:
-#             out.sigma12 = self.x_.sigma12 * self.scale_for_cholesky.reshape(-1, 1)
-#             out.mu = self.x_.mu
-#         else:
-#             out = self.x_
-#         self.out = out
-
-#     def x(self): 
-
-        return self.out
-
 
 # ------------------------------
 # Generative model
 # ------------------------------
-
-class GenerativeModel(nn.Module):
-    """
-    OCaml generative parameters:
-      log_learning_rate, log_learning_rate_decay, sigma_b, output_scale,
-      log_weight_decay, sigma_a, sigma_x  (all scalars in the OCaml init)
-    """
-    def __init__(self, device: torch.device, args=None):
-        super().__init__()
-        # match OCaml init scales
-        optimize_noises = not args.model == "toy" or args.optimize_toy_noises
-        self.log_learning_rate = nn.Parameter(torch.full((1,), -6.0, device=device))  # bounded below -3 in OCaml; we ignore bound
-        self.log_learning_rate_decay = nn.Parameter(torch.full((1,), 1e-5, device=device))
-        self.sigma_b = nn.Parameter(torch.full((1,), 0.1, device=device))
-        
-        self.output_scale = nn.Parameter(torch.full((1,), 1.0, device=device))
-        self.log_weight_decay = nn.Parameter(torch.full((1,), -0.001, device=device))
-        self.q_scale = nn.Parameter(torch.full((1,), 1.0, device=device)) if args.enable_q_scale_tuning else torch.tensor(1.0, device=device, requires_grad=False)
-        if not args.assume_opt_output_noise:
-            self.sigma_a = nn.Parameter(torch.full((1,), 0.1, device=device)) if optimize_noises else torch.tensor(args.toymodel_OUsigma_obs, 
-                                                                                                                       device=device, 
-                                                                                                                       requires_grad=False)
-        self.sigma_x = nn.Parameter(torch.full((1,), 0.1, device=device)) if optimize_noises else torch.tensor(args.toymodel_OUsigma_process, 
-                                                                                                                       device=device, 
-                                                                                                                       requires_grad=False)
-
-        
-        self.tauqlpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_qlpf else torch.tensor(-1000, device=device, requires_grad=False)
-        self.tauylpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_ylpf else torch.tensor(-1000, device=device, requires_grad=False)
-
-
-        self.register_buffer("_z_biases", torch.empty(0))  # base N(0,1) for biases
-        self.register_buffer("_w_in", torch.empty(0))      # random input features
-        self.register_buffer("_w_inq", torch.empty(0))  # random input features for q
-
-
-
-    @staticmethod
-    def better_relu(x: torch.Tensor) -> torch.Tensor:
-        return F.relu(x)
-    
-    @staticmethod
-    def softplus(x: torch.Tensor) -> torch.Tensor:
-        return torch.log1p(torch.exp(x))
-
-    # def _sample_biases_and_w_in(self, n, bs, device):
-    #     noise = torch.randn(n, device=device)          # no grad needed
-    #     biases = self.sigma_b.reshape(1) * noise       # grad flows to sigma_b
-    #     w_in = torch.randn(n, device=device)
-    #     return biases, w_in
-
-    def _ensure_random_features(self, n: int, device):
-        # Lazily initialize once, tied to n
-        if self._w_in.numel() != n:
-            # (Re)create fixed random features/bias base draw
-            self.register_buffer("_z_biases", torch.randn(n, device=device))
-            self.register_buffer("_w_in", torch.randn(n, device=device))
-            self.register_buffer("_w_inq", torch.randn(n, device=device))
-
-    def get_biases_and_w_in(self, n: int, device):
-        self._ensure_random_features(n, device)
-        biases = self.sigma_b.reshape(1) * self._z_biases  # scale base draw; grads flow to sigma_b
-        return biases, self._w_in
-    
-    def get_winq(self, n: int, device):
-        self._ensure_random_features(n, device)
-        return self._w_inq
-
-    def f(self,
-          n: int,
-          noises: List[torch.Tensor],   # list of [bs] tensors (one per time step)
-          ys: List[Optional[torch.Tensor]],  # list of optional target tensors (shape [1] per OCaml)
-          model_setting: str,
-          qs: Optional[List[Optional[torch.Tensor]]] = None,         
-          ) -> List[torch.Tensor]:
-        """
-        Port of the OCaml `Generative_model.f`.
-        Returns a list of a_means (each shape [bs]) for each time step.
-        """
-        assert len(noises) == len(ys), "noises and ys must have same length"
-        bs = noises[0].shape[0]
-        device = self.log_learning_rate.device
-
-        # biases, w_in = self._sample_biases_and_w_in(n=n, bs=bs, dvice=device)
-        biases, w_in = self.get_biases_and_w_in(n=n, device=device)
-        prescaled_w_inq = self.get_winq(n=n, device=device) if qs is not None else None
-
-        # state init
-        w_out = torch.zeros(bs, n, device=device)
-        u = torch.zeros(bs, device=device)
-        x = torch.zeros(bs, device=device)
-        e = torch.zeros(bs, device=device)
-        qlp = torch.zeros(1, device=device)
-        ylp = torch.zeros(1, device=device)
-        lr = torch.exp(self.log_learning_rate).expand(bs)
-
-        tauqlpf = 1.0 + self.softplus(self.tauqlpf_m1)
-        tauylpf = 1.0 + self.softplus(self.tauylpf_m1)
-
-        a_means: List[torch.Tensor] = []
-        for y, noise_x, q in zip(ys, noises,
-                                 qs if qs is not None else [torch.zeros((1,), device=device)]*len(ys)):
-            if model_setting == "toy":
-                x = args.toymodel_OUphi * x + noise_x
-                a_means.append(1.0 * x)
-
-            elif model_setting == "default":
-                qlp = (1.0 - tauqlpf) * qlp + tauqlpf * q
-                scaled_q_in  = (prescaled_w_inq * self.q_scale * qlp).unsqueeze(0)  #[1, n]
-
-                x = u + e + (noise_x if args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
-                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
-                u = torch.einsum("kj,kj->k", w_out, h)
-                a_mean = (self.output_scale * u).squeeze() + (noise_x if args.noise_injection_node == 'a' else 0)
-                if y is not None:
-                    ylp = (1.0 - tauylpf) * ylp + tauylpf * y
-                    e = ylp.to(device).expand_as(u) - u
-                    dw_out = (e.unsqueeze(1) * h) * lr.unsqueeze(1)
-                    w_out = w_out + dw_out
-                    norms = torch.sqrt(FUDGE + torch.einsum("ki->k", dw_out ** 2))
-                    lr = lr * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
-                else:
-                    e = torch.zeros_like(u, device=device)
-                w_out = (torch.exp(self.log_weight_decay) * w_out)
-                # keeping records
-                a_means.append(a_mean)
-            else:
-                raise ValueError("unknown model setting")
-
-        return a_means
 
 
 # ------------------------------
@@ -285,13 +101,14 @@ class GenerativeModel(nn.Module):
 # ------------------------------
 
 class FullModel(nn.Module):
-    def __init__(self, t: int, device: torch.device, args=None):
+    def __init__(self, t: int, device: torch.device, args=None, fudge=1e-4):
         super().__init__()
-        self.gen = GenerativeModel(device, args=args)
+        self.gen = ElboGenerativeModelTop(device, args=args)
         self.var = Variational(t,
                                 device,
                                 args=args,
                                 scale_for_cholesky=self.gen.sigma_x if args.scale_cholesky else None)
+        self.fudge = fudge
     #     self.scale_cholesky = args.scale_cholesky
 
     # def var(self,scale_for_cholesky: Optional[torch.Tensor] = None):
@@ -380,9 +197,9 @@ def neg_elbo(beta: float,
         log_q = Gaussian.log_density(q_theta_detached, x_samples)
 
         # log p for diagonal Gaussian prior N(0, diag(sigma_x^2))
-        x_term = (-0.5 / float(bs)) * torch.sum(x_samples ** 2) / torch.sum(FUDGE + (theta.gen.sigma_x ** 2))
+        x_term = (-0.5 / float(bs)) * torch.sum(x_samples ** 2) / torch.sum(self.fudge + (theta.gen.sigma_x ** 2))
         twopi = 2.0 * math.pi
-        log_p = x_term - (0.5 * float(len(a))) * torch.sum(torch.log(FUDGE + twopi * (theta.gen.sigma_x ** 2)))
+        log_p = x_term - (0.5 * float(len(a))) * torch.sum(torch.log(self.fudge + twopi * (theta.gen.sigma_x ** 2)))
         kl = log_q - log_p
     else:
         raise ValueError("unknown kl method")
@@ -523,6 +340,27 @@ def build_piecewise_ys(t: int, device: torch.device, paradigm = 'er') -> List[Op
         raise ValueError("unknown paradigm")
     return ys
 
+def eval_paradigms(model, playlist_file, args):
+    with open(playlist_file, 'rb') as f:
+        playlist = pickle.load(f)
+
+    model.eval()
+    with torch.no_grad():
+        outputs = {}
+        for paradigm_name,paradigm in playlist.items():
+            print(f'evaluating paradigm {paradigm_name} with {len(paradigm)} steps')
+            ys = paradigm
+            noises = torch.randn((args.bs, len(ys)), device=next(model.parameters()).device) * model.sigma_x  # [bs, t]
+            noises = [noises[:, t_idx] for t_idx in range(noises.shape[1])]
+            model_setting = args.model
+            outputs_ = model.f(args.n,
+                                noises,
+                                ys,  
+                                model_setting,
+                                qs=None,
+                                )
+            outputs[paradigm_name] = np.array([z.cpu().numpy().reshape(-1) for z in outputs_]) 
+    return outputs
 
 def main(args):
     device = get_device(args.cuda_index)
@@ -564,14 +402,7 @@ def main(args):
     if not args.load_ys_from_file: #backward compatibility mode
         ys = build_piecewise_ys(t, device=device, paradigm = args.paradigm)
 
-    # # Model
-    # if args.reuse is not None and Path(args.reuse).exists():
-    #     model = FullModel(t=t, device=device, args=args)
-    #     sd = torch.load(args.reuse, map_location=device)
-    #     model.load_state_dict(sd)
-    # else:
-    #     model = FullModel(t=t, device=device, args=args)
-
+    #Load or init. TODO: refactor into a function
     if args.reuse is not None and Path(args.reuse).exists():
         model = FullModel(t=t, device=device, args=args)
         sd = torch.load(args.reuse, map_location=device)
@@ -603,6 +434,11 @@ def main(args):
         return args.lr / math.sqrt(1.0 + (k / args.lr_decay_iter_scale))
 
     opt = torch.optim.Adam(model.parameters(), lr=lr_for_iter(0),)
+
+    if args.eval_only:
+        outputs = eval_paradigms(model.gen, args.paradigm_file, args) #dictionary of np.arrays
+        np.savez(outdir.joinpath("paradigms.npz"), **outputs)
+        return
 
     # Training loop
     loss_file = outdir.joinpath("loss.csv")
@@ -668,7 +504,7 @@ if __name__ == "__main__":
     p.add_argument("--model", choices=["default", "toy"], default="default", help="Model setting")
     p.add_argument("--klmethod", choices=["analytical", "montecarlo"], default="montecarlo")
     p.add_argument("--reuse", type=str, default=None, help="Load parameters from a previous run (.pt)")
-    p.add_argument("--cuda-index", type=int, default=CUDA_INDEX_DEFAULT)
+    p.add_argument("--cuda-index", type=int, default=0)
     p.add_argument("--bs", type=int, default=64)
     p.add_argument("--n", type=int, default=128)
     p.add_argument("--t-episode", type=int, default=None, help="Length of an episode (default: full data length)")
@@ -707,9 +543,12 @@ if __name__ == "__main__":
     p.add_argument("--toydata-usemask", action="store_true", help="Use a mask for the toy data (half observed, every 10th in first half)")
     
     #noise injection node:
-    p.add_argument("--noise-injection-node", choices=['a','x'], default='x', help="Node to inject noise in: a (output) or x (state)")
-
-
+    p.add_argument("--noise-injection-node", choices=['a','x','u'], default='x', help="Node to inject noise in: a (output) or x (state)")
+    #post training eval
+    p.add_argument("--eval-only", action="store_true", help="Only eval saved model on paradigms in --paradigm-file")
+    p.add_argument("--paradigm-file", type=str, default="paradigms.pkl", help="Path to paradigms .pkl file")
+    #weight decay fix
+    p.add_argument("--model-tie-lr-weight-decay", action="store_true", help="Tie weight decay to learning rate")
     args = p.parse_args()
 
 

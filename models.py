@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from typing import List, Optional, Tuple
+
 
 def nl_selector(nl):
 
@@ -22,6 +24,145 @@ def nl_selector(nl):
         else:
             raise ValueError('unkonow nonlinearity')
     return nl
+
+
+class ElboGenerativeModelTop(nn.Module):
+    """
+    OCaml generative parameters:
+      log_learning_rate, log_learning_rate_decay, sigma_b, output_scale,
+      log_weight_decay, sigma_a, sigma_x  (all scalars in the OCaml init)
+    """
+    def __init__(self, device: torch.device, args=None, fudge=1e-4):
+        super().__init__()
+        # match OCaml init scales
+        optimize_noises = not args.model == "toy" or args.optimize_toy_noises
+        self.log_learning_rate = nn.Parameter(torch.full((1,), -6.0, device=device))  # bounded below -3 in OCaml; we ignore bound
+        self.log_learning_rate_decay = nn.Parameter(torch.full((1,), 1e-5, device=device))
+        self.sigma_b = nn.Parameter(torch.full((1,), 0.1, device=device))
+        
+        self.output_scale = nn.Parameter(torch.full((1,), 1.0, device=device))
+        self.log_weight_decay = nn.Parameter(torch.full((1,), -0.001, device=device))
+        self.q_scale = nn.Parameter(torch.full((1,), 1.0, device=device)) if args.enable_q_scale_tuning else torch.tensor(1.0, device=device, requires_grad=False)
+        if not args.assume_opt_output_noise:
+            self.sigma_a = nn.Parameter(torch.full((1,), 0.1, device=device)) if optimize_noises else torch.tensor(args.toymodel_OUsigma_obs, 
+                                                                                                                       device=device, 
+                                                                                                                       requires_grad=False)
+        self.sigma_x = nn.Parameter(torch.full((1,), 0.1, device=device)) if optimize_noises else torch.tensor(args.toymodel_OUsigma_process, 
+                                                                                                                       device=device, 
+                                                                                                                       requires_grad=False)
+
+        
+        self.tauqlpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_qlpf else torch.tensor(-1000, device=device, requires_grad=False)
+        self.tauylpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_ylpf else torch.tensor(-1000, device=device, requires_grad=False)
+
+
+        self.register_buffer("_z_biases", torch.empty(0))  # base N(0,1) for biases
+        self.register_buffer("_w_in", torch.empty(0))      # random input features
+        self.register_buffer("_w_inq", torch.empty(0))  # random input features for q
+        self.args = args
+        self.fudge = fudge
+
+
+    @staticmethod
+    def better_relu(x: torch.Tensor) -> torch.Tensor:
+        return F.relu(x)
+    
+    @staticmethod
+    def softplus(x: torch.Tensor) -> torch.Tensor:
+        return torch.log1p(torch.exp(x))
+
+    # def _sample_biases_and_w_in(self, n, bs, device):
+    #     noise = torch.randn(n, device=device)          # no grad needed
+    #     biases = self.sigma_b.reshape(1) * noise       # grad flows to sigma_b
+    #     w_in = torch.randn(n, device=device)
+    #     return biases, w_in
+
+    def _ensure_random_features(self, n: int, device):
+        # Lazily initialize once, tied to n
+        if self._w_in.numel() != n:
+            # (Re)create fixed random features/bias base draw
+            self.register_buffer("_z_biases", torch.randn(n, device=device))
+            self.register_buffer("_w_in", torch.randn(n, device=device))
+            self.register_buffer("_w_inq", torch.randn(n, device=device))
+
+    def get_biases_and_w_in(self, n: int, device):
+        self._ensure_random_features(n, device)
+        biases = self.sigma_b.reshape(1) * self._z_biases  # scale base draw; grads flow to sigma_b
+        return biases, self._w_in
+    
+    def get_winq(self, n: int, device):
+        self._ensure_random_features(n, device)
+        return self._w_inq
+
+    def f(self,
+          n: int,
+          noises: List[torch.Tensor],   # list of [bs] tensors (one per time step)
+          ys: List[Optional[torch.Tensor]],  # list of optional target tensors (shape [1] per OCaml)
+          model_setting: str,
+          qs: Optional[List[Optional[torch.Tensor]]] = None,         
+          ) -> List[torch.Tensor]:
+        """
+        Port of the OCaml `Generative_model.f`.
+        Returns a list of a_means (each shape [bs]) for each time step.
+        """
+        assert len(noises) == len(ys), "noises and ys must have same length"
+        bs = noises[0].shape[0]
+        device = self.log_learning_rate.device
+
+        # biases, w_in = self._sample_biases_and_w_in(n=n, bs=bs, dvice=device)
+        biases, w_in = self.get_biases_and_w_in(n=n, device=device)
+        prescaled_w_inq = self.get_winq(n=n, device=device) if qs is not None else None
+
+        # state init
+        w_out = torch.zeros(bs, n, device=device)
+        u = torch.zeros(bs, device=device)
+        x = torch.zeros(bs, device=device)
+        e = torch.zeros(bs, device=device)
+        lr_mult = torch.ones(bs, device=device)
+        qlp = torch.zeros(1, device=device)
+        ylp = torch.zeros(1, device=device)
+        lr0 = torch.exp(self.log_learning_rate).expand(bs)
+        lr = lr0 * lr_mult
+
+        tauqlpf = 1.0 + self.softplus(self.tauqlpf_m1)
+        tauylpf = 1.0 + self.softplus(self.tauylpf_m1)
+
+        a_means: List[torch.Tensor] = []
+        for y, noise_x, q in zip(ys, noises,
+                                 qs if qs is not None else [torch.zeros((1,), device=device)]*len(ys)):
+            #if y is np.nan convert to None (y might be a torch tensor or a numpy scalar)
+            if y is not None and (isinstance(y, float) and np.isnan(y)):
+                y = None
+            if model_setting == "toy":
+                x = self.args.toymodel_OUphi * x + noise_x
+                a_means.append(1.0 * x)
+
+            elif model_setting == "default":
+                qlp = (1.0 - tauqlpf) * qlp + tauqlpf * q
+                scaled_q_in  = (prescaled_w_inq * self.q_scale * qlp).unsqueeze(0)  if prescaled_w_inq is not None else 0 #TODO: refactor
+
+                x = u + e + (noise_x if self.args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
+                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
+                u = torch.einsum("kj,kj->k", w_out, h) + (noise_x if self.args.noise_injection_node == 'u' else 0)
+                a_mean = (self.output_scale * u).squeeze() + (noise_x if self.args.noise_injection_node == 'a' else 0)
+                if y is not None: 
+                    ylp = (1.0 - tauylpf) * ylp + tauylpf * y
+                    e = ylp.to(device).expand_as(u) - u
+                    dw_out = (e.unsqueeze(1) * h) * lr.unsqueeze(1)
+                    w_out = w_out + dw_out
+                    norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
+                    lr_mult = lr_mult * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
+                    lr = lr0 * lr_mult
+                else:
+                    e = torch.zeros_like(u, device=device)
+                w_out = (torch.exp(self.log_weight_decay * (lr_mult if self.args.model_tie_lr_weight_decay else 1.0)).unsqueeze(1) * w_out)
+                # keeping records
+                a_means.append(a_mean)
+            else:
+                raise ValueError("unknown model setting")
+
+        return a_means
+
 
 class ModelForRunner():
     #abstract class with reset_state method
