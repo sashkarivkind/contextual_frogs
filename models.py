@@ -168,12 +168,36 @@ class ElboGenerativeModelDualRate(nn.Module):
 
     def __init__(self, device: torch.device, args=None, fudge=1e-4):
         super().__init__()
-        self.aslow = nn.Parameter(torch.full((1,), 0.95, device=device))  # bounded below -3 in OCaml; we ignore bound
-        self.afast = nn.Parameter(torch.full((1,), 0.2, device=device))  # bounded below -3 in OCaml; we ignore bound
-        self.bslow = nn.Parameter(torch.full((1,), 0.05, device=device))  # bounded below -3 in OCaml; we ignore bound
-        self.bfast = nn.Parameter(torch.full((1,), 0.5, device=device))  # bounded below -3 in OCaml; we ignore bound
-    
-        self.sigma_x = nn.Parameter(torch.full((1,), 0.1, device=device)) 
+
+        # --- sample within recommended ranges ---
+        # Aslow in [0.97, 0.999]
+        As = 0.97 + (0.999 - 0.97) * torch.rand(1, device=device)
+
+        # draw a gap so Af < As, then clamp Af to [0.55, 0.90] for realism
+        gap = 0.07 + (0.40 - 0.07) * torch.rand(1, device=device)   # gap in [0.07, 0.40]
+        Af_raw = As - gap
+        Af = torch.clamp(Af_raw, min=torch.tensor(0.55, device=device),
+                                   max=torch.tensor(0.90, device=device))
+        # ensure strict Af < As (tiny epsilon in case clamp hit As)
+        Af = torch.minimum(Af, As - torch.tensor(1e-4, device=device))
+
+        # Bslow in [0.005, 0.05]
+        Bs = 0.005 + (0.05 - 0.005) * torch.rand(1, device=device)
+        # Bfast in [0.15, 0.35]
+        Bf = 0.15 + (0.35 - 0.15) * torch.rand(1, device=device)
+
+        # --- register learnable parameters ---
+        self.aslow = nn.Parameter(As)   # ~0.97–0.999
+        self.afast = nn.Parameter(Af)   # < aslow, ~0.55–0.90
+        self.bslow = nn.Parameter(Bs)   # ~0.005–0.05
+        self.bfast = nn.Parameter(Bf)   # ~0.15–0.35
+
+        # self.aslow = nn.Parameter(torch.full((1,), 0.95, device=device))  
+        # self.afast = nn.Parameter(torch.full((1,), 0.2, device=device))
+        # self.bslow = nn.Parameter(torch.full((1,), 0.05, device=device))
+        # self.bfast = nn.Parameter(torch.full((1,), 0.5, device=device))
+
+        self.sigma_x = nn.Parameter(torch.full((1,), 0.1, device=device))
         self.fudge = fudge
         if args.noise_injection_node not in ['x', 'a']:
             raise ValueError("noise_injection_node for Dual Rate model must be one of 'x', 'a'")
