@@ -44,10 +44,11 @@ for p2 in "${seeds[@]}"; do
       --load-ys-from-file \
       --seed "$p2" \
       --reuse "$source_outdir/"/params.pt \
-       --eval-only --paradigm-file ../../signoffrepertoire1.pkl  \
-        --model-tie-lr-weight-decay \
+      --noise-injection-node u \
+      --save-batch-of-trajs \
+      --model-tie-lr-weight-decay \
       &
-            # --save-batch-of-trajs \
+      #  --eval-only --paradigm-file ../../signoffrepertoire1.pkl  \
 
       pid=$!
       echo "$pid" >> "$outdirroot/pids.txt"

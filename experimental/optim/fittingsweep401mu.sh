@@ -10,18 +10,18 @@ participants=({1..24})
 seeds=(1 )
 
 # concurrency
-max_concurrent=4
+max_concurrent=3
 concurrents=0
 
 # bookkeeping
 id=1
-outdirroot="results/mem_upd_try1/"
+outdirroot="results/mem_upd_try2/"
 mkdir -p "$outdirroot"
 
 for part in "${participants[@]}"; do
   for seed in "${seeds[@]}"; do
     outdir="${outdirroot}/run_participant${part}_seed${seed}"
-    mkdir -p "$outdir"
+    # mkdir -p "$outdir"
 
     echo ">>> Launching run #$id participant=${part}, seed=${seed} -> $outdir"
 
@@ -40,6 +40,7 @@ for part in "${participants[@]}"; do
       --paradigm sr \
       --load-ys-from-file \
       --enable-qlpf \
+      --model-tie-lr-weight-decay \
       --seed "${seed}" \
       &
 

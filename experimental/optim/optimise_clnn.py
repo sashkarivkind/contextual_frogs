@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import sys
+import time
 sys.path.append("../../") 
 
 import argparse
@@ -20,6 +21,7 @@ import json
 from models import ElboGenerativeModelTop, ElboGenerativeModelDualRate
 from types import SimpleNamespace
 import pickle
+import time
 # ------------------------------
 # Utilities & defaults
 # ------------------------------
@@ -200,9 +202,9 @@ def neg_elbo(beta: float,
         log_q = Gaussian.log_density(q_theta_detached, x_samples)
 
         # log p for diagonal Gaussian prior N(0, diag(sigma_x^2))
-        x_term = (-0.5 / float(bs)) * torch.sum(x_samples ** 2) / torch.sum(self.fudge + (theta.gen.sigma_x ** 2))
+        x_term = (-0.5 / float(bs)) * torch.sum(x_samples ** 2) / torch.sum(fudge + (theta.gen.sigma_x ** 2))
         twopi = 2.0 * math.pi
-        log_p = x_term - (0.5 * float(len(a))) * torch.sum(torch.log(self.fudge + twopi * (theta.gen.sigma_x ** 2)))
+        log_p = x_term - (0.5 * float(len(a))) * torch.sum(torch.log(fudge + twopi * (theta.gen.sigma_x ** 2)))
         kl = log_q - log_p
     else:
         raise ValueError("unknown kl method")
@@ -241,7 +243,14 @@ def save_results(theta: FullModel,
                  incl_matrices: bool = True,
                  a_list: Optional[List[Optional[torch.Tensor]]] = None,
                  qs: Optional[List[Optional[torch.Tensor]]] = None) -> None:
-    outdir.mkdir(parents=True, exist_ok=True)
+
+    # if outdir.exists():
+    #     response = input(f"Directory {outdir} already exists. Overwrite? (y/n) ")
+    #     if response.lower() != "y":
+    #         print("Exiting...")
+    #         exit(0)
+    
+    # outdir.mkdir(parents=True, exist_ok=True)
 
     # Save parameters
     torch.save(theta.state_dict(), outdir.joinpath("params.pt"))
@@ -369,7 +378,12 @@ def main(args):
     device = get_device(args.cuda_index)
     # Create output directory if doesn't exist
     outdir = Path(args.out_dir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    try:
+        outdir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        print(f"Output directory {outdir} already exists. Exiting to avoid overwrite.")
+        time.sleep(5) #to avoid top level overflow
+        exit(0)
     json.dump(vars(args), (outdir / 'config.json').open('w'), indent=2)
 
 
@@ -457,6 +471,9 @@ def main(args):
     bs = args.bs
     n = args.n
     max_iter = args.max_iter
+    best_loss = float("inf")
+    best_iter = args.kl_warmup_iters
+    last_iter_flag = False
     # debug_dict = {'x_samples': model.var.x().mu.reshape(1, -1).expand(bs, -1)} 
     for it in range(max_iter + 1):
 
@@ -480,13 +497,22 @@ def main(args):
             loss_float = float(loss.detach().cpu())
             ll_float = float(ll.detach().cpu())
             kl_float = float(kl.detach().cpu())
+            if it >= args.kl_warmup_iters:
+                if loss_float < best_loss:
+                    best_loss = loss_float
+                    best_iter = it
+                if it - best_iter >= args.early_stopping_patience:
+                    print(f'Early stopping at iter {it}')
+                    last_iter_flag = True
         loss.backward()
         opt.step()
+        #early stopping check
 
+        
         # if False: #TODO: undebug
-        if it % args.save_every == 0: #TODO: cleanup and refactor
+        if it % args.save_every == 0 or last_iter_flag:
             print({"t": it, "loss": loss_float, "log_lik": ll_float, "kl": kl_float,})
-            save_results(model, outdir, ys, n, incl_matrices=(it % args.save_matrices_every == 0),a_list=a_list, qs=qs)
+            save_results(model, outdir, ys, n, incl_matrices=(it % args.save_matrices_every == 0 or last_iter_flag),a_list=a_list, qs=qs)
             if args.print_params:
                 print(f' gen params: lr={torch.exp(model.gen.log_learning_rate).item():.3e}, decay={torch.exp(model.gen.log_learning_rate_decay).item():.3e}, '
                     f'sigma_b={model.gen.sigma_b.item():.3e}, sigma_a={model.gen.sigma_a.item():.3e}, '
@@ -496,6 +522,9 @@ def main(args):
                 f.write(f"{it},{loss_float}\n")
             with log_file.open("a", encoding="utf-8") as f:
                 f.write(f"{it},{loss_float},{ll_float},{kl_float}\n")
+        
+        if last_iter_flag:
+            break
 
 
 
@@ -519,6 +548,8 @@ if __name__ == "__main__":
     p.add_argument("--lr", type=float, default=1e-3, help="Base learning rate")
     p.add_argument("--lr-decay-iter-scale", type=float, default=100.0, help="Learning rate decay scale in iterations")
     p.add_argument("--kl-warmup-iters", type=int, default=2000, help="Number of iterations for KL warmup (0 = no warmup)")
+
+    p.add_argument("--early-stopping-patience", type=int, default=300, help="Number of iterations to wait before early stopping")
     p.add_argument("--assume-opt-output-noise", action="store_true", help="Assume output var noise = sigma_a^2 (else use empirical)")
     p.add_argument("--adam-epsilon", type=float, default=1e-8, help="Adam epsilon")
     p.add_argument("--paradigm", choices=['NA','er','sr'], default='NA', help="paradigm er (evoked recovery) or sr (spontaneous recovery)")
@@ -526,8 +557,13 @@ if __name__ == "__main__":
     # filtering
     p.add_argument("--enable-qlpf", action="store_true", help="Enable q low-pass filter (tau_qlpf)")
     p.add_argument("--enable-ylpf", action="store_true", help="Enable y low-pass filter (tau_ylpf)")
+    p.add_argument("--enable-elpf", action="store_true", help="Enable e low-pass filter (tau_elpf)")
+    
     p.add_argument("--enable-q-scale-tuning", action="store_true", help="Enable tuning of q_scale (else fixed to 1.0)")
 
+    #default model params
+    p.add_argument("--enable-u-feedback-scale-tuning", action="store_true", help="Enable tuning of u_feedback_scale (else fixed to 1.0)")
+    p.add_argument("--disable-output-scale-tuning", dest="enable_output_scale_tuning", action="store_false", help="Disable tuning of output_scale (else enabled by default)")
 
     # Logging / saving
     p.add_argument("--print-params", action="store_true", help="Print model params every 10 iters")
@@ -552,7 +588,10 @@ if __name__ == "__main__":
     p.add_argument("--paradigm-file", type=str, default="paradigms.pkl", help="Path to paradigms .pkl file")
     #weight decay fix
     p.add_argument("--model-tie-lr-weight-decay", action="store_true", help="Tie weight decay to learning rate")
+    p.add_argument("--zzz-legacy-init", action="store_true", help="Use legacy initialization")
     args = p.parse_args()
+
+
 
 
     args.toymodel_OUphi = args.toydata_OUphi if args.toymodel_OUphi is None else args.toymodel_OUphi

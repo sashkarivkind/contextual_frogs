@@ -26,9 +26,16 @@ def flip_sequence(p_stay=None, Tmax=None, tau=1, P1=0, P2=1):
     # Map polarity to P1 and P2
     return P1 * polarity + P2 * (1 - polarity)
 
-def herzfeld_block(z, T_pert=30, T_wash=10, P1=None,P2=None,P0=None, tau=1):
-    hz = np.concatenate([flip_sequence(p_stay=z, Tmax=T_pert, tau=1, P1=P1, P2=P2),
-                    [np.nan,np.nan],
-                    P0*np.ones(T_wash),
-                    [np.nan,P1,np.nan]]),
+def herzfeld_block(z, T_pert=30, T_wash=10, P1=None,P2=None,P0=None, tau=1, probe_first=False):
+    if not probe_first:
+        hz = np.concatenate([flip_sequence(p_stay=z, Tmax=T_pert, tau=1, P1=P1, P2=P2),
+                        [np.nan,np.nan],
+                        P0*np.ones(T_wash),
+                        [np.nan,P1,np.nan]])
+    else:
+        hz = np.concatenate([[np.nan,P1,np.nan],
+                        flip_sequence(p_stay=z, Tmax=T_pert, tau=1, P1=P1, P2=P2),
+                        [np.nan,np.nan],
+                        P0*np.ones(T_wash),
+                        ])
     return np.repeat(hz,tau)

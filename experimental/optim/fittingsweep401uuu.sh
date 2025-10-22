@@ -4,14 +4,14 @@ set -euo pipefail
 # vals=(0.01 0.05 0.1 0.2)
 # vals=(3 4 13)
 vals=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
-seeds=(1 2 3 4 5)
+seeds=({1..15})
 # seeds=(1 2 3 4 5)
 
 max_concurrent=20
 concurrents=0
 id=1
 # outdirroot="results/realthing403uuu_seedsFX/"
-outdirroot="results/realthing403dualxxx_seedsFX/"
+outdirroot="results/realthing403uuuUfb_seedsFX/"
 for p2 in "${seeds[@]}"; do
   for p1 in "${vals[@]}"; do
     outdir="${outdirroot}/run${p1}_seed${p2}"
@@ -24,7 +24,7 @@ for p2 in "${seeds[@]}"; do
       subindex=$((p1 - 8))
     fi
 
-    mkdir -p "$outdir"
+    # mkdir -p "$outdir"
 
     # echo ">>> Launching run #$id with p1=$p1, p2=$p2 -> $outdir"
     echo ">>> Launching run #$id with p1=$p1 -> $outdir"
@@ -41,9 +41,11 @@ for p2 in "${seeds[@]}"; do
       --assume-opt-output-noise \
       --cuda-index 0 --paradigm NA \
       --load-ys-from-file \
-      --noise-injection-node x \
+      --noise-injection-node u \
       --model-tie-lr-weight-decay \
-      --model dual-rate \
+      --enable-u-feedback-scale-tuning \
+      --disable-output-scale-tuning \
+      --model default \
       --seed "$p2" \
       &
       pid=$!
