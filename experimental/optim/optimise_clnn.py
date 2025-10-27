@@ -266,7 +266,6 @@ def save_results(theta: FullModel,
 
         mu = theta.var.x().mu.reshape(-1, 1)
         np.savetxt(outdir.joinpath("post_mu.txt"), mu.detach().cpu().numpy())
-
         # predictions using mean noise = mu split across time
         noises = [theta.var.x().mu[t_idx:t_idx+1] for t_idx in range(theta.var.x().mu.shape[0])]
         # Broadcast each to [bs] via tiny helper: we’ll use bs=1 for deterministic mean path

@@ -27,11 +27,7 @@ def nl_selector(nl):
 
 
 class ElboGenerativeModelTop(nn.Module):
-    """
-    OCaml generative parameters:
-      log_learning_rate, log_learning_rate_decay, sigma_b, output_scale,
-      log_weight_decay, sigma_a, sigma_x  (all scalars in the OCaml init)
-    """
+
     def __init__(self, device: torch.device, args=None, fudge=1e-4):
         super().__init__()
         # randomize initial parameters within reasonable ranges (conditional on not zzz_legacy_init for backwards compatibility):
@@ -39,7 +35,7 @@ class ElboGenerativeModelTop(nn.Module):
         init_log_learning_rate_decay = -1 + 2 * np.random.rand() if not args.zzz_legacy_init else 0.0  # [-1, 1]
         init_sigma_b = 0.05 + 0.5 * np.random.rand() if not args.zzz_legacy_init else 0.1  # [0.05, 0.55]
         init_output_scale = 0.8 + 0.2 * np.random.rand()  if not args.zzz_legacy_init else 1.0  # [0.8, 1.0]
-        init_log_weight_decay = -0.00 - 0.05 * np.random.rand() if not args.zzz_legacy_init else -0.001  # [-0.01, 0.01]
+        init_sp_weight_decay = -5 + 2 * np.random.rand() if not args.zzz_legacy_init else -4  # [-5, -3]
         init_sigma_a = 0.02 + 0.1 * np.random.rand()  if not args.zzz_legacy_init else 0.1  # [0.02, 0.12]
         init_sigma_x = 0.02 + 0.1 * np.random.rand()  if not args.zzz_legacy_init else 0.1  # [0.02, 0.12]
 
@@ -51,7 +47,7 @@ class ElboGenerativeModelTop(nn.Module):
 
         self.output_scale = nn.Parameter(torch.full((1,), init_output_scale, device=device)) if args.enable_output_scale_tuning else torch.tensor(1.0, device=device, requires_grad=False)
         self.u_feedback_scale = nn.Parameter(torch.full((1,), 1.0, device=device)) if args.enable_u_feedback_scale_tuning else torch.tensor(1.0, device=device, requires_grad=False)    
-        self.log_weight_decay = nn.Parameter(torch.full((1,), init_log_weight_decay, device=device))
+        self.sp_weight_decay = nn.Parameter(torch.full((1,), init_sp_weight_decay, device=device))
         self.q_scale = nn.Parameter(torch.full((1,), 1.0, device=device)) if args.enable_q_scale_tuning else torch.tensor(1.0, device=device, requires_grad=False)
         if not args.assume_opt_output_noise:
             self.sigma_a = nn.Parameter(torch.full((1,), init_sigma_a, device=device)) if optimize_noises else torch.tensor(args.toymodel_OUsigma_obs, 
@@ -160,14 +156,15 @@ class ElboGenerativeModelTop(nn.Module):
                 if y is not None: 
                     ylp = (1.0 - tauylpf) * ylp + tauylpf * y
                     e = ylp.to(device).expand_as(u) - u
-                    dw_out = (e.unsqueeze(1) * h) * lr.unsqueeze(1)
-                    w_out = w_out + dw_out
-                    norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
-                    lr_mult = lr_mult * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
-                    lr = lr0 * lr_mult
                 else:
                     e = torch.zeros_like(u, device=device)
-                w_out = (torch.exp(self.log_weight_decay * (lr_mult if self.args.model_tie_lr_weight_decay else 1.0)).unsqueeze(1) * w_out)
+                dw_out = lr.unsqueeze(1) * e.unsqueeze(1) * h
+                norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
+                dw_out = dw_out - lr.unsqueeze(1) * self.softplus(self.sp_weight_decay) * w_out
+                w_out = w_out + dw_out
+                #learning rate update
+                lr_mult = lr_mult * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
+                lr = lr0 * lr_mult
                 # keeping records
                 a_means.append(a_mean)
             else:

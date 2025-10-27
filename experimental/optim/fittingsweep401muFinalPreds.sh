@@ -15,12 +15,16 @@ concurrents=0
 
 # bookkeeping
 id=1
-outdirroot="results/mem_upd_try3/"
+outdirroot="results/mem_upd_try3Final/"
+source_outdirroot="results/mem_upd_try3/"
+
 # mkdir -p "$outdirroot"
 
 for part in "${participants[@]}"; do
   for seed in "${seeds[@]}"; do
     outdir="${outdirroot}/run${part}_seed${seed}"
+    source_outdir="${source_outdirroot}/run${part}_seed${seed}"
+
     # mkdir -p "$outdir"
 
     echo ">>> Launching run #$id participant=${part}, seed=${seed} -> $outdir"
@@ -34,7 +38,7 @@ for part in "${participants[@]}"; do
       --enable-kl-grad \
       --max-iter 10000 \
       --scale-cholesky \
-      --lr 0.001 \
+      --lr 0.0 \
       --assume-opt-output-noise \
       --noise-injection-node u \
       --cuda-index 0 \
@@ -43,6 +47,8 @@ for part in "${participants[@]}"; do
       --enable-qlpf \
       --model-tie-lr-weight-decay \
       --seed "${seed}" \
+      --reuse "$source_outdir/"/params.pt \
+      --save-batch-of-trajs \
       &
 
     pid_last=$!
