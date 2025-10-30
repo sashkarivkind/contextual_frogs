@@ -109,10 +109,11 @@ class FullModel(nn.Module):
             self.gen = ElboGenerativeModelDualRate(device, args=args)
         else:
             self.gen = ElboGenerativeModelTop(device, args=args)
-        self.var = Variational(t,
-                                device,
-                                args=args,
-                                scale_for_cholesky=self.gen.sigma_x if args.scale_cholesky else None)
+        if not args.disable_variational:
+            self.var = Variational(t,
+                                    device,
+                                    args=args,
+                                    scale_for_cholesky=self.gen.sigma_x if args.scale_cholesky else None)
         self.fudge = fudge
     #     self.scale_cholesky = args.scale_cholesky
 
@@ -151,7 +152,7 @@ def neg_elbo(beta: float,
     if debug_dict is not None:
         # print('Using debug x_samples')
         x_samples = debug_dict['x_samples']
-    elif sample_from_prior:
+    elif sample_from_prior or args.disable_variational:
         x_samples = torch.randn((bs, t), device=device) * theta.gen.sigma_x  # [bs, t]
     else:
         x_samples = Gaussian.sample(theta.var.x(), bs)   # [bs, t]
@@ -161,7 +162,10 @@ def neg_elbo(beta: float,
     # likelihood term
     # propagate through model
     # print(f'qs: {qs}')
-    a_means = theta.gen.f(n=n, noises=noises, ys=ys, qs=qs, model_setting=args.model) 
+    a_means = theta.gen.f(n=n, noises=noises, ys=ys, qs=qs, model_setting=args.model) # [t,bs]
+    #remove the last timestep and add zero valued timestep at the beginning:
+     
+
     # if return_a_means_hook:
     #     return a_means
 
@@ -186,28 +190,32 @@ def neg_elbo(beta: float,
     log_det_term = (-0.5 * float(count)) * torch.log(sigma_out2)
     log_lik = log_det_term + mean_quad_and_const * float(count)
     # KL term
-    mu_q = theta.var.x().mu.detach() if not args.enable_kl_grad else theta.var.x().mu
-    sigma12_q = theta.var.x().sigma12.detach() if not args.enable_kl_grad else theta.var.x().sigma12
-    if klmethod == "analytical":
-        kl = Gaussian.gaussian_kl_full_vs_diag(
-            mu_p=mu_q,
-            sigma12_p=sigma12_q,
-            diag_sigma2_q=(theta.gen.sigma_x ** 2).expand_as(theta.var.x().mu)
-        ) 
+    if not args.disable_variational:
+        mu_q = theta.var.x().mu.detach() if not args.enable_kl_grad else theta.var.x().mu
+        sigma12_q = theta.var.x().sigma12.detach() if not args.enable_kl_grad else theta.var.x().sigma12
+        if klmethod == "analytical":
+            kl = Gaussian.gaussian_kl_full_vs_diag(
+                mu_p=mu_q,
+                sigma12_p=sigma12_q,
+                diag_sigma2_q=(theta.gen.sigma_x ** 2).expand_as(theta.var.x().mu)
+            ) 
 
-        # (scalar)
-    elif klmethod == "montecarlo":
-        # log q (stop-grad through q params, like OCaml)
-        q_theta_detached = GaussianParams(mu_q, sigma12_q)
-        log_q = Gaussian.log_density(q_theta_detached, x_samples)
+            # (scalar)
+        elif klmethod == "montecarlo":
+            # log q (stop-grad through q params, like OCaml)
+            q_theta_detached = GaussianParams(mu_q, sigma12_q)
+            log_q = Gaussian.log_density(q_theta_detached, x_samples)
 
-        # log p for diagonal Gaussian prior N(0, diag(sigma_x^2))
-        x_term = (-0.5 / float(bs)) * torch.sum(x_samples ** 2) / torch.sum(fudge + (theta.gen.sigma_x ** 2))
-        twopi = 2.0 * math.pi
-        log_p = x_term - (0.5 * float(len(a))) * torch.sum(torch.log(fudge + twopi * (theta.gen.sigma_x ** 2)))
-        kl = log_q - log_p
-    else:
-        raise ValueError("unknown kl method")
+            # log p for diagonal Gaussian prior N(0, diag(sigma_x^2))
+            x_term = (-0.5 / float(bs)) * torch.sum(x_samples ** 2) / torch.sum(fudge + (theta.gen.sigma_x ** 2))
+            twopi = 2.0 * math.pi
+            log_p = x_term - (0.5 * float(len(a))) * torch.sum(torch.log(fudge + twopi * (theta.gen.sigma_x ** 2)))
+            kl = log_q - log_p
+        else:
+            raise ValueError("unknown kl method")
+
+    if args.disable_variational:
+        kl = torch.tensor(0.0, device=device)
 
     neg_elbo_val = (beta * kl) - log_lik 
     # OCaml finishes with: any ((1. / len(ys)) * neg_elbo)
@@ -257,22 +265,28 @@ def save_results(theta: FullModel,
 
     # Save posterior matrices (var.x)
     with torch.no_grad():
-        if incl_matrices:
-            sigma12 = theta.var.x().sigma12
-            sigma = sigma12 @ sigma12.transpose(-1, -2)
+        if not args.disable_variational:
+            if incl_matrices:
+                sigma12 = theta.var.x().sigma12
+                sigma = sigma12 @ sigma12.transpose(-1, -2)
 
-            np.savetxt(outdir.joinpath("post_sigma.txt"), sigma.detach().cpu().numpy())
-            np.savetxt(outdir.joinpath("post_sigma12.txt"), sigma12.detach().cpu().numpy())
+                np.savetxt(outdir.joinpath("post_sigma.txt"), sigma.detach().cpu().numpy())
+                np.savetxt(outdir.joinpath("post_sigma12.txt"), sigma12.detach().cpu().numpy())
 
-        mu = theta.var.x().mu.reshape(-1, 1)
-        np.savetxt(outdir.joinpath("post_mu.txt"), mu.detach().cpu().numpy())
-        # predictions using mean noise = mu split across time
-        noises = [theta.var.x().mu[t_idx:t_idx+1] for t_idx in range(theta.var.x().mu.shape[0])]
-        # Broadcast each to [bs] via tiny helper: we’ll use bs=1 for deterministic mean path
-        noises = [z.expand(1) for z in noises]
+            mu = theta.var.x().mu.reshape(-1, 1)
+            np.savetxt(outdir.joinpath("post_mu.txt"), mu.detach().cpu().numpy())
+            # predictions using mean noise = mu split across time
+            noises = [theta.var.x().mu[t_idx:t_idx+1] for t_idx in range(theta.var.x().mu.shape[0])]
+            # Broadcast each to [bs] via tiny helper: we’ll use bs=1 for deterministic mean path
+            noises = [z.expand(1) for z in noises]
+        else:
+            #generate a batch of noises using prior sigma_x
+            noises = torch.randn((1, len(ys)), device=next(theta.parameters()).device) * theta.gen.sigma_x  # [bs, t]
+            noises = [noises[:, t_idx] for t_idx in range(noises.shape[1])]
         a_pred_list = theta.gen.f(n=n, noises=noises, ys=ys, model_setting=args.model,qs=qs)
-        pred_a = torch.cat([z.reshape(1, 1) for z in a_pred_list], dim=0)  # [T,1]
+        pred_a = torch.cat([z.mean().reshape(1, 1) for z in a_pred_list], dim=0)  # [T,1]
         np.savetxt(outdir.joinpath("pred_a.txt"), pred_a.detach().cpu().numpy())
+
         if args.save_batch_of_trajs:
             with torch.no_grad():
                 for sample_from_prior in [True, False]:
@@ -544,6 +558,7 @@ if __name__ == "__main__":
     p.add_argument("--enable-kl-grad", action="store_true", help="Enable KL divergence gradient")
     p.add_argument("--scale-cholesky", action="store_true", help="Scale cholesky by sigma_x")
     p.add_argument("--seed", type=int, default=42, help="Random seed")
+    p.add_argument("--disable-variational", action="store_true", help="Disable variational inference (use prior)")
     p.add_argument("--lr", type=float, default=1e-3, help="Base learning rate")
     p.add_argument("--lr-decay-iter-scale", type=float, default=100.0, help="Learning rate decay scale in iterations")
     p.add_argument("--kl-warmup-iters", type=int, default=2000, help="Number of iterations for KL warmup (0 = no warmup)")

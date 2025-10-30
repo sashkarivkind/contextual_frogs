@@ -2,11 +2,12 @@
 set -euo pipefail
 
 # ---- sweep config ----
-# participants to run (edit as you like)
+# participants to run 
 # participants=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
 participants=({1..24})
+# participants=(1 )
 
-# random seeds to run (edit as you like)
+# random seeds to run 
 seeds=(1 )
 
 # concurrency
@@ -15,7 +16,7 @@ concurrents=0
 
 # bookkeeping
 id=1
-outdirroot="results/mem_upd_try3/"
+outdirroot="results/mem_upd_try5/"
 # mkdir -p "$outdirroot"
 
 for part in "${participants[@]}"; do
@@ -40,9 +41,10 @@ for part in "${participants[@]}"; do
       --cuda-index 0 \
       --paradigm sr \
       --load-ys-from-file \
-      --enable-qlpf \
+      --enable-elpf \
       --model-tie-lr-weight-decay \
       --seed "${seed}" \
+      --disable-variational \
       &
 
     pid_last=$!
