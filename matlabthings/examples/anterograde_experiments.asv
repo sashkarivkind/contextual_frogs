@@ -1,0 +1,62 @@
+%paradigm from COIN paper
+Pplus=1;
+Pminus=-1;
+P0=0;
+Pchannel = NaN;
+
+
+TaN=150
+TaB=120
+stimuli = struct( ...
+  'AB0', [ P0*ones(1,TaN),           Pminus*ones(1,TaB) ], ...
+  'AB1', [ P0*ones(1,TaN),   Pplus*ones(1,13),  Pminus*ones(1,TaB) ], ...
+  'AB2', [ P0*ones(1,TaN),   Pplus*ones(1,41),  Pminus*ones(1,TaB) ], ...
+  'AB3', [ P0*ones(1,TaN),  Pplus*ones(1,112),  Pminus*ones(1,TaB) ], ...
+  'AB4', [ P0*ones(1,TaN),  Pplus*ones(1,230),  Pminus*ones(1,TaB) ], ...
+  'AB5', [ P0*ones(1,TaN),  Pplus*ones(1,410),  Pminus*ones(1,TaB) ]  ...
+);
+
+
+% alias_LUT = struct('spontaneous','E','evoked','S');
+% alias_LUT = struct('spontaneous','S','evoked','E');
+subject_alias = {}
+for i=1:8
+    subject_alias{end+1} = ['S',num2str(i)];
+end
+for i=1:8
+    subject_alias{end+1} = ['S',num2str(i)];
+end
+for i=1:24
+    subject_alias{end+1} = ['S',num2str(i)];
+end
+
+results = {}
+
+paradigms = fields(stimuli);
+
+for i_paradigm = 1:length(paradigms)
+    paradigm = paradigms{i_paradigm};
+    for i_subj=1:40
+
+        model = COIN;
+        model.perturbations = stimuli.(paradigm);
+        model = assign_coin_params(model,subject_alias{i_subj},paramsTable);
+
+        model.runs = 2;
+        model.max_cores = feature('numcores');
+        model.plot_state_given_context = true;
+        model.plot_predicted_probabilities = true;
+        model.plot_state = true;
+        model.plot_global_transition_probabilities = true;
+        model.plot_local_transition_probabilities = true;
+        model.plot_responsibilities = true;
+
+        % for a working memory task performed between trials 596 and 597, set the
+        % predicted probabilities on trial 597 to the stationary context
+        % probabilities
+        % model.stationary_trials = 597;
+
+        results{end+1} = model.simulate_COIN;
+        close all;
+    end
+end
