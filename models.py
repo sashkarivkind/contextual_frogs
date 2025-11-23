@@ -126,9 +126,9 @@ class ElboGenerativeModelTop(nn.Module):
         x = torch.zeros(bs, device=device)
         e = torch.zeros(bs, device=device)
         lr_mult = torch.ones(bs, device=device)
-        qlp = torch.zeros(1, device=device)
-        ylp = torch.zeros(1, device=device)
-        elp = torch.zeros(1, device=device)
+        qlp = torch.zeros(bs, device=device)
+        ylp = torch.zeros(bs, device=device)
+        elp = torch.zeros(bs, device=device)
         lr0 = torch.exp(self.log_learning_rate).expand(bs)
         lr = lr0 * lr_mult
 
@@ -140,26 +140,37 @@ class ElboGenerativeModelTop(nn.Module):
         for y, noise_x, q in zip(ys, noises,
                                  qs if qs is not None else [torch.zeros((1,), device=device)]*len(ys)):
             #if y is np.nan convert to None (y might be a torch tensor or a numpy scalar)
-            if y is not None and (isinstance(y, float) and np.isnan(y)):
-                y = None
+            # if y is not None and (isinstance(y, float) and np.isnan(y)):
+            #     y = None
+            if y is None:
+                y = torch.full((bs,), float('nan'), device=device)
+        
             if model_setting == "toy":
                 x = self.args.toymodel_OUphi * x + noise_x
                 a_means.append(1.0 * x)
 
             elif model_setting == "default":
                 qlp = (1.0 - 1./tauqlpf) * qlp + 1./tauqlpf * q
-                scaled_q_in  = (prescaled_w_inq * self.q_scale * qlp).unsqueeze(0)  if prescaled_w_inq is not None else 0 #TODO: refactor
+                scaled_q_in  = (prescaled_w_inq.unsqueeze(0) * self.q_scale * qlp.unsqueeze(1))  if prescaled_w_inq is not None else 0 #TODO: refactor
 
                 x = u * self.u_feedback_scale + \
                     + e + (noise_x if self.args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
                 h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
                 u = torch.einsum("kj,kj->k", w_out, h) + (noise_x if self.args.noise_injection_node == 'u' else 0)
                 a_mean = (self.output_scale * u).squeeze() + (noise_x if self.args.noise_injection_node == 'a' else 0)
-                if y is not None: 
-                    ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y
-                    e = ylp.to(device).expand_as(u) - u
-                else:
-                    e = torch.zeros_like(u, device=device)
+
+                # if y is not None: 
+                #     ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y
+                #     e = ylp.to(device).expand_as(u) - u
+                # else:
+                #     e = torch.zeros_like(u, device=device)
+                
+                # elements of y that are not specified (NaN) are replaced with corresponding elements of u
+                mask = torch.isnan(y)
+                y_ = torch.where(mask, u, y)
+                ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y_
+                e = ylp.expand_as(u) - u
+
                 elp = (1.0 - 1./tauelpf) * elp + 1./tauelpf * e
                 dw_out = lr.unsqueeze(1) * elp.unsqueeze(1) * h
                 norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
