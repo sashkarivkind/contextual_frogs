@@ -61,8 +61,10 @@ class ElboGenerativeModelTop(nn.Module):
         self.tauqlpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_qlpf else torch.tensor(-1000, device=device, requires_grad=False)
         self.tauylpf_m1 = nn.Parameter(torch.full((1,), -1., device=device)) if args.enable_ylpf else torch.tensor(-1000, device=device, requires_grad=False)
         self.tauelpf_m1 = nn.Parameter(torch.full((1,), 1., device=device)) if args.enable_elpf else torch.tensor(-1000, device=device, requires_grad=False)
-
-
+        self.direct_injection_scale = nn.Parameter(torch.full((1,), 0.0, 
+                                                              device=device)) if args.enable_direct_injection else torch.tensor(0.0, 
+                                                                                                                                     device=device, 
+                                                                                                                                     requires_grad=False)
         self.register_buffer("_z_biases", torch.empty(0))  # base N(0,1) for biases
         self.register_buffer("_w_in", torch.empty(0))      # random input features
         self.register_buffer("_w_inq", torch.empty(0))  # random input features for q
@@ -143,7 +145,9 @@ class ElboGenerativeModelTop(nn.Module):
             # if y is not None and (isinstance(y, float) and np.isnan(y)):
             #     y = None
             if y is None:
-                y = torch.full((bs,), float('nan'), device=device)
+                y = torch.full((bs,), np.double('nan'), device=device)
+            # else:
+            #     y = y.expand(bs)
         
             if model_setting == "toy":
                 x = self.args.toymodel_OUphi * x + noise_x
@@ -155,19 +159,20 @@ class ElboGenerativeModelTop(nn.Module):
 
                 x = u * self.u_feedback_scale + \
                     + e + (noise_x if self.args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
-                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
-                u = torch.einsum("kj,kj->k", w_out, h) + (noise_x if self.args.noise_injection_node == 'u' else 0)
-                a_mean = (self.output_scale * u).squeeze() + (noise_x if self.args.noise_injection_node == 'a' else 0)
 
-                # if y is not None: 
-                #     ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y
-                #     e = ylp.to(device).expand_as(u) - u
-                # else:
-                #     e = torch.zeros_like(u, device=device)
-                
-                # elements of y that are not specified (NaN) are replaced with corresponding elements of u
+                #adding direct observation of y(t) (for non-channel trials only)
                 mask = torch.isnan(y)
+                x = torch.where(mask, x, (1. - self.direct_injection_scale)*x + self.direct_injection_scale*y)
+
+                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
+                
+
+                u = torch.einsum("kj,kj->k", w_out, h) + (noise_x if self.args.noise_injection_node == 'u' else 0.)
+                a_mean = (self.output_scale * u).squeeze() + (noise_x if self.args.noise_injection_node == 'a' else 0.)
+
+                #handling channel trials         
                 y_ = torch.where(mask, u, y)
+
                 ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y_
                 e = ylp.expand_as(u) - u
 
