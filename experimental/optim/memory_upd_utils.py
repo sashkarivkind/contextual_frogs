@@ -102,4 +102,77 @@ def extract_mem_updates(ys, qs, aa, range_of_triplets):
     return np.array(outs_)
         
     
+def extract_adaptation_measurements(ys, qs, aa, align_polarity=True, post_exposure=True):
+    '''
+    Extracts memory updates from the output traces, according to COIN paper Ext data Fig.7a; postExposure.
+    Args:
+        ys: applied forces (numpy array)
+        qs: sensory cues (numpy array)
+        aa: experimental/modeled adaptation levels (numpy array)
     
+    Returns:
+        outs: a dictionary with keys q1,q2 and values being lsts of absolute (as opposed to sandwitch referenced) adaptation 
+    '''
+    if not post_exposure:
+        raise NotImplementedError('Only post-exposure adaptation measurements extraction is implemented!')
+
+    if align_polarity:
+    #align all the polarities according to qs (so that q=+1 corresponds to positive y)
+        polarity_main = polarity(ys, qs)
+        ys = ys * polarity_main
+        aa = aa * polarity_main
+    #create list of all the start indexes of triplets of (np.nan, np.nan) in ys, such that the preciding y is not nan and not zero; 
+    #throw an exception if: (i) in any of these pairs has the same q for both trials (ii) if in fact the doublet is more than dublet
+    start_indexes = []
+    outs = {1: [], -1: []}
+    for i in range(1,len(ys) - 2):
+        if np.isclose(np.abs(ys[i-1]), 1.) and np.isnan(ys[i]) and np.isnan(ys[i + 1]) and not np.isnan(ys[i+2]):
+            if np.isclose(qs[i], qs[i + 1]):
+                raise ValueError(f'Found a doublet with same q values at indexes {i} and {i+1}!')
+            if i+2 < len(ys) and np.isnan(ys[i + 2]):
+                raise ValueError(f'Found a triplet or longer sequence of NaNs starting at index {i}!')
+            
+            for j in range(i, i + 2):
+                cnt = 0
+                for k in outs.keys():
+                    if np.isclose(qs[j], k):
+                        outs[k].append(aa[j])
+                        cnt += 1
+                if cnt != 1:
+                    raise ValueError(f'Matched q value {qs[j]} to {cnt} keys in outs dict, while it should match exactly one!')
+    return outs
+        
+
+
+
+
+    # print(f'using start indexes: {start_indexes}')
+    #create 4 D array to hold outputs
+    outs_ = [[] for _ in range(4)]
+    for idx, start_idx in enumerate(start_indexes):
+        #all triplets should have q=+1 at the beginning and end
+        # if not (np.isclose(qs[start_idx], 1) and np.isclose(qs[start_idx + 2], 1)):
+        #     raise ValueError(f'q values in triplet are not as expected! Found: q1={qs[start_idx]}, q3={qs[start_idx + 2]}, for triplet starting at index {start_idx}')
+        #get y2 and q2
+        y2 = ys[start_idx + 1]
+        q2 = qs[start_idx + 1]
+        #determine which of the 4 combinations it is
+        if not np.isclose(qs[start_idx], qs[start_idx + 2]):
+            raise ValueError(f'q values in triplet are not as expected! Found: q1={qs[start_idx]}, q3={qs[start_idx + 2]}, for triplet starting at index {start_idx}')
+        q1 = qs[start_idx] #polarity_main # or =1, depends on how we understand the polarity alignment
+        if np.isclose(y2, 1) and np.isclose(q2, 1*q1):
+            comb_idx = 0
+        elif np.isclose(y2, 1) and np.isclose(q2, -1*q1):
+            comb_idx = 1
+        elif np.isclose(y2, -1) and np.isclose(q2, 1*q1):
+            comb_idx = 2
+        elif np.isclose(y2, -1) and np.isclose(q2, -1*q1):
+            comb_idx = 3
+        else:
+            raise ValueError('y2 and q2 values in triplet are not binary!')
+        #store the corresponding a3 - a1 in the list
+        a1 = aa[start_idx]
+        a3 = aa[start_idx + 2]
+        outs_[comb_idx].append(a3 - a1)
+    # outs_ = [np.array(o) for o in outs_]
+    return np.array(outs_)

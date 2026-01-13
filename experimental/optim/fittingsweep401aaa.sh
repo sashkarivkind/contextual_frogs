@@ -4,15 +4,15 @@ set -euo pipefail
 # vals=(0.01 0.05 0.1 0.2)
 # vals=(1) 
 vals=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
-seeds=({1..15})
+seeds=({1..5})
 # seeds=(1)
 
-max_concurrent=1
-concurrents=0
+max_concurrent=20
+concurrents=1
 id=1
 # outdirroot="results/realthing403uuu_seedsFX/"
 # outdirroot="results/realthing403uuuUfb_seedsREF1/"
-outdirroot="results/realthing403uuuUfb_seedsJ1/"
+outdirroot="results/realthing403aaa_seedsJSwp4noTie/"
 for p2 in "${seeds[@]}"; do
   for p1 in "${vals[@]}"; do
     outdir="${outdirroot}/run${p1}_seed${p2}"
@@ -26,6 +26,7 @@ for p2 in "${seeds[@]}"; do
     fi
 
     # mkdir -p "$outdir"
+    mkdir -p "$outdirroot"
 
     # echo ">>> Launching run #$id with p1=$p1, p2=$p2 -> $outdir"
     echo ">>> Launching run #$id with p1=$p1 -> $outdir"
@@ -42,13 +43,14 @@ for p2 in "${seeds[@]}"; do
       --assume-opt-output-noise \
       --cuda-index 0 --paradigm NA \
       --load-ys-from-file \
-      --noise-injection-node u \
-      --model-tie-lr-weight-decay \
-      --enable-u-feedback-scale-tuning \
-      --disable-output-scale-tuning \
+      --noise-injection-node a \
       --model default \
       --seed "$p2" \
       &
+      # --model-tie-lr-weight-decay \
+      # --enable-direct-injection \
+      # --enable-u-feedback-scale-tuning \
+      # --disable-output-scale-tuning \
       pid=$!
       echo "$pid" >> "$outdirroot/pids.txt"
       concurrents=$((concurrents + 1))

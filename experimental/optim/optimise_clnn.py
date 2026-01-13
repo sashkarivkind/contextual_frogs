@@ -2,7 +2,6 @@
 import sys
 import time
 sys.path.append("../../") 
-
 import argparse
 import math
 import os
@@ -405,8 +404,8 @@ def main(args):
         if args.load_ys_from_file:
             a_list, ys, qs = load_subject_data(args.data)
             a_list = [torch.tensor([z], device=device) if not np.isnan(z) else None for z in a_list]
-            ys = [torch.tensor([y], device=device) if not np.isnan(y) else None for y in ys]
-            qs = [torch.tensor([q], device=device) if not np.isnan(q) else None for q in qs]
+            ys = [torch.tensor([y], device=device, dtype=torch.float32) if not np.isnan(y) else None for y in ys]
+            qs = [torch.tensor([q], device=device, dtype=torch.float32) if not np.isnan(q) else None for q in qs]
             # Enable q_scale tuning if any q is not zero, nan or None
             args.enable_q_scale_tuning = any([ (q is not None) and (not torch.isnan(q).all()) and (not (q==0.0).all()) for q in qs])
         else: #backward compatibility mode
@@ -574,6 +573,7 @@ if __name__ == "__main__":
     p.add_argument("--enable-elpf", action="store_true", help="Enable e low-pass filter (tau_elpf)")
     
     p.add_argument("--enable-q-scale-tuning", action="store_true", help="Enable tuning of q_scale (else fixed to 1.0)")
+    p.add_argument("--enable-direct-injection", action="store_true", help="enable direct injection of current step observation y_t")
 
     #default model params
     p.add_argument("--enable-u-feedback-scale-tuning", action="store_true", help="Enable tuning of u_feedback_scale (else fixed to 1.0)")

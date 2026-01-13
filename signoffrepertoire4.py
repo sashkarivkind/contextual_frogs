@@ -27,7 +27,36 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
 'AB2':[(P0, TaN),(Pplus,41),(Pminus, TaB)],
 'AB3':[(P0, TaN),(Pplus,112),(Pminus, TaB)],
 'AB4':[(P0, TaN),(Pplus,230),(Pminus, TaB)],
-'AB5':[(P0, TaN),(Pplus,410),(Pminus, TaB)]})
+'AB5':[(P0, TaN),(Pplus,410),(Pminus, TaB)],
+'spontaneous': [(P0, 50),
+                        (Pplus, 125),
+                        (Pminus, 15),
+                        (Pchannel, 150)],
+'evoked': [(P0, 50),
+            (Pplus, 125),
+            (Pminus, 15),
+            (Pchannel, 2),
+            (Pplus, 2),
+            (Pchannel, 146)],
+'visw1p2': [(P0, 250),(Pplus,300), (Pchannel, 600)],            
+'visw1p1': [(Pplus,300), (Pchannel, 600)],            
+'visw1p3': [(0.5*Pminus, 250),(Pplus,300), (Pchannel, 600)],            
+})
+
+
+def albert_block(enable_noise=True, Pplus=14, Pnoise=6, Pnormalisation=15):
+    '''Generates an Albert et al 2020, experiment 2'''
+    tnull = 10*4
+    texp = 80*4
+    tchannel = 10*4
+    
+    if not enable_noise:
+        Pexp = Pplus
+    else:
+        Pexp = Pplus + Pnoise*np.random.normal(size=texp)
+
+    return [(P0, tnull), (Pexp/Pnormalisation, texp), (Pchannel, tchannel)]
+
 
 
 def generate_herzfeld_scenarios(z_list=None, n_blocks=None, Tflips=None, suffix='', probe_first=False): 
@@ -41,12 +70,18 @@ def generate_herzfeld_scenarios(z_list=None, n_blocks=None, Tflips=None, suffix=
         out_dict.update({scenario_name:pert_per_z})
     return out_dict
 
+'''add 1 noiseless and 10 noisy albert blocks'''
+for i in range(101):
+    enable_noise = (i != 0)
+    playlist.update( {f'albert_block_{i}': albert_block(enable_noise=enable_noise)} )
+
 hrz_params = {'z_list': [0.1,0.5,0.9], 'n_blocks': 25}
-for iter in range(20):
+for iter in range(5):
     hrz_playlist =  generate_herzfeld_scenarios(**hrz_params, suffix=f'${iter}', probe_first=True)
     playlist.update(hrz_playlist)
 
+
 parsed_playlist = {k: parse_samples(v) for k, v in playlist.items()}
 print(f'generated {len(parsed_playlist)} paradigms: {list(parsed_playlist.keys())}')
-with open('signoffrepertoire4.pkl', 'wb') as f:
+with open('signoffrepertoire4.3.pkl', 'wb') as f:
     pickle.dump(parsed_playlist, f)

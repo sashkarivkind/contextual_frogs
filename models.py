@@ -35,7 +35,12 @@ class ElboGenerativeModelTop(nn.Module):
         init_log_learning_rate_decay = -1 + 2 * np.random.rand() if not args.zzz_legacy_init else 0.0  # [-1, 1]
         init_sigma_b = 0.05 + 0.5 * np.random.rand() if not args.zzz_legacy_init else 0.1  # [0.05, 0.55]
         init_output_scale = 0.8 + 0.2 * np.random.rand()  if not args.zzz_legacy_init else 1.0  # [0.8, 1.0]
-        init_sp_weight_decay = -5 + 2 * np.random.rand() if not args.zzz_legacy_init else -4  # [-5, -3]
+
+        if args.model_tie_lr_weight_decay:
+            init_sp_weight_decay = -5 + 2 * np.random.rand() if not args.zzz_legacy_init else -4  # [-5, -3]
+        else:
+            init_sp_weight_decay = -8 + 2 * np.random.rand() if not args.zzz_legacy_init else -7 
+        
         init_sigma_a = 0.02 + 0.1 * np.random.rand()  if not args.zzz_legacy_init else 0.1  # [0.02, 0.12]
         init_sigma_x = 0.02 + 0.1 * np.random.rand()  if not args.zzz_legacy_init else 0.1  # [0.02, 0.12]
 
@@ -65,6 +70,7 @@ class ElboGenerativeModelTop(nn.Module):
                                                               device=device)) if args.enable_direct_injection else torch.tensor(0.0, 
                                                                                                                                      device=device, 
                                                                                                                                      requires_grad=False)
+
         self.register_buffer("_z_biases", torch.empty(0))  # base N(0,1) for biases
         self.register_buffer("_w_in", torch.empty(0))      # random input features
         self.register_buffer("_w_inq", torch.empty(0))  # random input features for q
@@ -139,6 +145,13 @@ class ElboGenerativeModelTop(nn.Module):
         tauelpf = 1.0 + self.softplus(self.tauelpf_m1)
 
         a_means: List[torch.Tensor] = []
+
+        #TODO: decide if to clamp the direct injection scale
+        # inj_ = 0.999 * torch.clamp(self.direct_injection_scale, 0.0, 0.1) #+ 0.001 * self.direct_injection_scale 
+        # print(f'inj_{inj_}')
+        inj_ = self.direct_injection_scale
+
+
         for y, noise_x, q in zip(ys, noises,
                                  qs if qs is not None else [torch.zeros((1,), device=device)]*len(ys)):
             #if y is np.nan convert to None (y might be a torch tensor or a numpy scalar)
@@ -155,6 +168,7 @@ class ElboGenerativeModelTop(nn.Module):
 
             elif model_setting == "default":
                 qlp = (1.0 - 1./tauqlpf) * qlp + 1./tauqlpf * q
+
                 scaled_q_in  = (prescaled_w_inq.unsqueeze(0) * self.q_scale * qlp.unsqueeze(1))  if prescaled_w_inq is not None else 0 #TODO: refactor
 
                 x = u * self.u_feedback_scale + \
@@ -162,10 +176,9 @@ class ElboGenerativeModelTop(nn.Module):
 
                 #adding direct observation of y(t) (for non-channel trials only)
                 mask = torch.isnan(y)
-                x = torch.where(mask, x, (1. - self.direct_injection_scale)*x + self.direct_injection_scale*y)
-
-                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
-                
+                nanless_y = torch.where(mask, torch.zeros_like(y), y)
+                x = torch.where(mask, x, (1. - inj_)*x + inj_*nanless_y) #nanless y is never used to replace nans with non-nans, all it does is saves the backprop from nans
+                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)          
 
                 u = torch.einsum("kj,kj->k", w_out, h) + (noise_x if self.args.noise_injection_node == 'u' else 0.)
                 a_mean = (self.output_scale * u).squeeze() + (noise_x if self.args.noise_injection_node == 'a' else 0.)
@@ -173,13 +186,16 @@ class ElboGenerativeModelTop(nn.Module):
                 #handling channel trials         
                 y_ = torch.where(mask, u, y)
 
-                ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y_
+                ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y_ 
                 e = ylp.expand_as(u) - u
+                # print(f'e: {e}')
 
                 elp = (1.0 - 1./tauelpf) * elp + 1./tauelpf * e
+                # print(f'elp: {elp}')
                 dw_out = lr.unsqueeze(1) * elp.unsqueeze(1) * h
                 norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
-                dw_out = dw_out - lr.unsqueeze(1) * self.softplus(self.sp_weight_decay) * w_out
+
+                dw_out = dw_out - (lr.unsqueeze(1) if self.args.model_tie_lr_weight_decay else 1) * self.softplus(self.sp_weight_decay) * w_out
                 w_out = w_out + dw_out
                 #learning rate update
                 lr_mult = lr_mult * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
