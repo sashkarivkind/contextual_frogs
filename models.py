@@ -30,6 +30,14 @@ class ElboGenerativeModelTop(nn.Module):
 
     def __init__(self, device: torch.device, args=None, fudge=1e-4):
         super().__init__()
+
+        # --- set default args ---
+        default_args = {'injection_opt': 1,
+                         'skip_gain': 0.0,
+                         'channel_trial_extra_error': 0.0,}
+        for key, value in default_args.items():
+            if not hasattr(args, key):
+                setattr(args, key, value)
         # randomize initial parameters within reasonable ranges (conditional on not zzz_legacy_init for backwards compatibility):
         init_log_learning_rate = -7.0 + 2.5 * np.random.rand() if not args.zzz_legacy_init else -6.0  # [-7,-4.5]
         init_log_learning_rate_decay = -1 + 2 * np.random.rand() if not args.zzz_legacy_init else 0.0  # [-1, 1]
@@ -171,35 +179,52 @@ class ElboGenerativeModelTop(nn.Module):
 
                 scaled_q_in  = (prescaled_w_inq.unsqueeze(0) * self.q_scale * qlp.unsqueeze(1))  if prescaled_w_inq is not None else 0 #TODO: refactor
 
+                #TODO: consider using the filtered version of error in x, or discarding the filtering option all together
                 x = u * self.u_feedback_scale + \
                     + e + (noise_x if self.args.noise_injection_node == 'x' else 0) #TODO: rename noise_x to generalise
 
                 #adding direct observation of y(t) (for non-channel trials only)
                 mask = torch.isnan(y)
-                nanless_y = torch.where(mask, torch.zeros_like(y), y)
-                x = torch.where(mask, x, (1. - inj_)*x + inj_*nanless_y) #nanless y is never used to replace nans with non-nans, all it does is saves the backprop from nans
-                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)          
+                if self.args.injection_opt == 1:
+                    raise ValueError("injection_opt 1 is deprecated, use injection_opt 2 instead")
+                    nanless_y = torch.where(mask, torch.zeros_like(y), y)
+                    x = torch.where(mask, x, (1. - inj_)*x + inj_*nanless_y) #nanless y is never used to replace nans with non-nans, all it does is saves the backprop from nans
 
+                h = self.better_relu(biases + (x.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)          
                 u = torch.einsum("kj,kj->k", w_out, h) + (noise_x if self.args.noise_injection_node == 'u' else 0.)
+                u = u + self.args.skip_gain * x  #skip connection from x to u
                 a_mean = (self.output_scale * u).squeeze() + (noise_x if self.args.noise_injection_node == 'a' else 0.)
 
-                #handling channel trials         
-                y_ = torch.where(mask, u, y)
-
+                #handling channel trials; when trial is a channel trial, observed force is always the excerted force         
+                y_ = torch.where(mask, u + self.args.channel_trial_extra_error, #error added here ends up being added to error in channel trials
+                                  y)                                            #
                 ylp = (1.0 - 1./tauylpf) * ylp + 1./tauylpf * y_ 
+
+                #computing and low-passing the error
                 e = ylp.expand_as(u) - u
-                # print(f'e: {e}')
-
                 elp = (1.0 - 1./tauelpf) * elp + 1./tauelpf * e
-                # print(f'elp: {elp}')
-                dw_out = lr.unsqueeze(1) * elp.unsqueeze(1) * h
-                norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
+                
+                if self.args.injection_opt == 2: #newly experienced perturbation leaks into the hidden layer
+                    if self.args.noise_injection_node == 'x':
+                        raise ValueError("injection_opt2 incompatible with noise_injection_node 'x' yet")
+                    x_prime = u * self.u_feedback_scale + e #TODO - consider using elp instead of e
+                    # x_bar = (1. - inj_)*x + inj_*x_prime
+                    h_prime = self.better_relu(biases + (x_prime.unsqueeze(1) * w_in.unsqueeze(0)) + scaled_q_in)
+                    h_bar = (1. - inj_)*h + inj_*h_prime
+                else:
+                    h_bar = h
 
-                dw_out = dw_out - (lr.unsqueeze(1) if self.args.model_tie_lr_weight_decay else 1) * self.softplus(self.sp_weight_decay) * w_out
+                #weight update
+                dw_out = lr.unsqueeze(1) * elp.unsqueeze(1) * h_bar
+                #TODO: decide if to move the norms computation after weight decay
+                norms = torch.sqrt(self.fudge + torch.einsum("ki->k", dw_out ** 2))
+                dw_out = dw_out - (lr.unsqueeze(1) if self.args.model_tie_lr_weight_decay else 1) * self.softplus(self.sp_weight_decay) * w_out          
                 w_out = w_out + dw_out
+
                 #learning rate update
                 lr_mult = lr_mult * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))
                 lr = lr0 * lr_mult
+
                 # keeping records
                 a_means.append(a_mean)
             else:

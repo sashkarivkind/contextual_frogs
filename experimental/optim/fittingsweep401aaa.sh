@@ -12,7 +12,8 @@ concurrents=1
 id=1
 # outdirroot="results/realthing403uuu_seedsFX/"
 # outdirroot="results/realthing403uuuUfb_seedsREF1/"
-outdirroot="results/realthing403aaa_seedsJSwp4noTie/"
+# outdirroot="results/realthing403aaa_seedsJSwp4noTie/"
+outdirroot="results/realthing403aaa_seedsJSwp5noVariInjec/"
 for p2 in "${seeds[@]}"; do
   for p1 in "${vals[@]}"; do
     outdir="${outdirroot}/run${p1}_seed${p2}"
@@ -46,9 +47,10 @@ for p2 in "${seeds[@]}"; do
       --noise-injection-node a \
       --model default \
       --seed "$p2" \
+      --enable-direct-injection \
+      --disable-variational \
       &
       # --model-tie-lr-weight-decay \
-      # --enable-direct-injection \
       # --enable-u-feedback-scale-tuning \
       # --disable-output-scale-tuning \
       pid=$!

@@ -3,6 +3,61 @@ import argparse
 import pandas as pd
 
 
+import math
+from typing import Literal, Tuple
+
+def bic_gaussian_from_rmse(
+    rmse: float,
+    n: int,
+    k: int,
+    include_sigma_in_k: bool = False,
+    return_loglik: bool = False
+    ) :
+    """
+    Compute BIC for i.i.d. Gaussian residuals using RMSE and full likelihood constants.
+
+    Assumptions:
+      - residuals ~ N(0, sigma^2)
+      - sigma^2 is estimated by MLE: sigma_hat^2 = RSS/n = RMSE^2
+      - log-likelihood includes the 2*pi prefactor (no dropped constants)
+
+    Parameters
+    ----------
+    rmse : float
+        Root-mean-square error, i.e. sqrt(RSS/n).
+    n : int
+        Number of data points.
+    k : int
+        Number of model parameters (excluding sigma unless include_sigma_in_k=True).
+    include_sigma_in_k : bool, default False
+        If True, counts sigma (noise scale) as an additional parameter: k <- k + 1.
+    return_loglik : bool, default False
+        If True, return (bic, loglik_max).
+
+    Returns
+    -------
+    bic : float
+        Bayesian Information Criterion: BIC = k*ln(n) - 2*loglik_max
+    (bic, loglik_max) : tuple
+        If return_loglik=True.
+    """
+    if n <= 0:
+        raise ValueError("n must be positive")
+    if rmse <= 0:
+        raise ValueError("rmse must be positive (needed because log(rmse^2))")
+    if k < 0:
+        raise ValueError("k must be non-negative")
+
+    keff = k + (1 if include_sigma_in_k else 0)
+
+    sigma2_hat = rmse * rmse
+    loglik_max = -0.5 * n * (math.log(2.0 * math.pi * sigma2_hat) + 1.0)
+
+    bic = keff * math.log(n) - 2.0 * loglik_max
+
+    return (bic, loglik_max) if return_loglik else bic
+
+
 def bic(measured_data, modeled_data, k_params,
         mode='white_gaussian',
         autoregressive_coeffs=None,

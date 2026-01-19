@@ -55,3 +55,18 @@ def force_model_params(model, forced_params):
         if name in forced_params:
             print(f'Forcing parameter {name} to value {forced_params[name]}')
             param.data.fill_(forced_params[name])
+
+def fwd_pass(model, ys, args, do_noise=False, qs=None):
+    if not do_noise:
+            noises = [torch.zeros((args.bs,), device=next(model.parameters()).device) for _ in range(len(ys))]  # [bs, t]
+    else:
+            raise NotImplementedError("Noise injection not implemented in this snippet")
+    model_setting = args.model
+    outputs_ = model.f(args.n,
+                            noises,
+                            ys,  
+                            model_setting,
+                            qs=qs,
+                            )
+    outputs = torch.stack(outputs_)
+    return outputs.mean(axis=1)
