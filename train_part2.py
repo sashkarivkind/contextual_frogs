@@ -5,44 +5,182 @@ sys.path.append('/homes/ar2342/one_more_dir/contextual_frogs/')
 import numpy as np
 import torch
 from types import SimpleNamespace
-from models_part2 import BatchedElboGenerativeModelTop
+from models_part2 import BatchedElboGenerativeModelTopMulti
 import os
 from optimise_clnn import load_subject_data
 
-result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU3/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMulti104trySchV2_m2u/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_LRflr1em1/'
+
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD/'
+
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_injLim0p45/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_inj/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_inj_decCap0p3/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_inj_REDO_NoiNewICSWeights/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatAdam_M2noAnoLRD_inj_REDO_NoiNewICSWeights/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_injMU_AmpliBeginEndX20/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_injMU/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/zz1_deleteme/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/experimental_uMUm2/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/experimental_um2a_resc_sig/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3withSaves/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3withSavesRMSprop/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3withSavesRMSprop_LRflr1em1/'
+
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_XLsigmoidFRMSprop/'
+
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_2ratesBound/'
+result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/clnn_2ratesU_Bound_v3LNG/'
+
 os.makedirs(result_dir, exist_ok=True)
 # -----------------------
 # 1) Setup (match your routine)
 # -----------------------
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-mode = 'MU' # 'ERSR' # 'MU'
+mode =  'ERSR' #'ERSR' #'MU' 
 paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
 
-n_seeds = 5  
+priority_factor = 1 #10
+# priority_up_to = 205
+priority_intervals = [(None, 300), (1900, None)] # example: prioritize early and late time points
+
+n_seeds = 128*2 if mode =='ERSR' else 32 #72  
 n_subjects = 16 if mode == 'ERSR' else 24
-n_epochs = 2000
+n_epochs = 15000
+template = 'multirate' #'state-space' #'lr_reduct' #
 
+class Scheduler:
+    '''
+    Docstring for Scheduler
+    generic scheduler that reduces a value by multiplying by gamma every step_size epochs
+    '''
+    def __init__(self, initial_value, step_size, gamma):
+        self.initial_value = initial_value
+        self.step_size = step_size
+        self.gamma = gamma
+        self.current_epoch = 0
+    def step(self):
+        self.current_epoch += 1
+    def get_value(self):
+        return self.initial_value * (self.gamma ** (self.current_epoch // self.step_size))
 
+class NoiseScheduler(Scheduler):
+    '''
+    provides scheduled scale for input and output noise injection
+    default schedule is to reduce the noise by 10**(-0.5) every 250 epochs, starting from 1.0
+    noise supplied as tensors of shape [T,B] located on the device. Initial amplitudes are 0.3 for both input and output
+    '''
+    def __init__(self, initial_scale=0.3, step_size=250, gamma=0.31622776601683794):
+        super().__init__(initial_scale, step_size, gamma)
+    def get_noise(self, T, B, device):
+        scale = self.get_value()
+        return torch.randn(T, B, device=device) * scale
 
-args = SimpleNamespace(
-    model='default',
-    enable_q_scale_tuning= mode == 'MU',
-    assume_opt_output_noise=True,
-    enable_qlpf=False,
-    enable_ylpf=False,
-    enable_elpf=False,
-    noise_injection_node='a',
-    model_tie_lr_weight_decay=False,
-    bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
-    zzz_legacy_init=False,
-    enable_output_scale_tuning= mode == 'MU',
-    enable_u_feedback_scale_tuning=False,
-    enable_direct_injection= mode == 'MU',
-    injection_opt=2,            # you’re using opt=2 in the model code
-    skip_gain=0.0,
-    channel_trial_extra_error=0.0,
-    n=128 if mode == 'ERSR' else 256,
-)
+if template == 'lr_reduct':
+        args = SimpleNamespace(
+        model='default',
+        enable_q_scale_tuning= mode == 'MU',
+        assume_opt_output_noise=True,
+        enable_qlpf=False,
+        enable_ylpf=False,
+        enable_elpf=False,
+        multirate_m=1,          # 
+        apply_lr_decay=True, #False,
+        noise_injection_node='a',
+        model_tie_lr_weight_decay=False,
+        bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
+        zzz_legacy_init=False,
+        enable_output_scale_tuning= True, #False,# mode == 'MU',
+        enable_u_feedback_scale_tuning=False, #True,
+        enable_direct_injection= True , #mode == 'MU',
+        injection_opt=3,            # you’re using opt=2 in the model code
+        skip_gain=0.0,
+        channel_trial_extra_error=0.0,
+        lr_min_mult = 1e-1,
+        weight_decay_mode='softplus', #'sigmoid', #
+        # weight_decay_mode='sigmoid',
+        nl_activation='relu',
+        n=128 if mode == 'ERSR' else 256,
+        disable_lpfs=True,
+        optimizer_alg='RMSprop',
+        n_seeds=n_seeds,
+        # direct_inj_limiter=0.45,
+    )
+elif template == 'multirate':
+    args = SimpleNamespace(
+        model='default',
+        enable_q_scale_tuning= mode == 'MU',
+        assume_opt_output_noise=True,
+        enable_qlpf=False,
+        enable_ylpf=False,
+        enable_elpf=False,
+        multirate_m=2,          # 
+        apply_lr_decay=False, #False,
+        noise_injection_node='a',
+        model_tie_lr_weight_decay=False,
+        bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
+        zzz_legacy_init=False,
+        enable_output_scale_tuning= False, #False,# mode == 'MU',
+        enable_u_feedback_scale_tuning=True, #True,
+        enable_direct_injection= True , #mode == 'MU',
+        injection_opt=3,            # you’re using opt=2 in the model code
+        skip_gain=0.0,
+        channel_trial_extra_error=0.0,
+        lr_min_mult = 1e-1,
+        weight_decay_mode='softplus', #'sigmoid', #
+        # weight_decay_mode='clipped_sigmoid',
+        weight_decay_max=1.0,
+        nl_activation='relu', #['relu', 'const'], # 'rescaled_sigmoid', #'relu', #
+        n=128 if mode == 'ERSR' else 256,
+        disable_lpfs=True,
+        optimizer_alg= 'RMSprop', # 'RMSprop',
+        n_seeds=n_seeds,
+        priority_intervals=priority_intervals,
+        priority_factor=priority_factor,
+        lr_bound = 1./512.,
+        bound_weight_decay = True,
+        # direct_inj_limiter=0.45,
+    )
+elif template == 'state-space':
+    args = SimpleNamespace(
+        model='default',
+        enable_q_scale_tuning= mode == 'MU',
+        assume_opt_output_noise=True,
+        enable_qlpf=False,
+        enable_ylpf=False,
+        enable_elpf=False,
+        multirate_m=2,          # 
+        apply_lr_decay=False, #False,
+        noise_injection_node='a',
+        model_tie_lr_weight_decay=False,
+        bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
+        zzz_legacy_init=False,
+        enable_output_scale_tuning= False, #False,# mode == 'MU',
+        enable_u_feedback_scale_tuning=False, #True,
+        enable_direct_injection= False , #mode == 'MU',
+        injection_opt=3,            # you’re using opt=2 in the model code
+        skip_gain=0.0,
+        channel_trial_extra_error=0.0,
+        lr_min_mult = 1e-1,
+        weight_decay_mode='softplus', #'sigmoid', #
+        # weight_decay_mode='clipped_sigmoid',
+        weight_decay_max=1.0,
+        nl_activation='const', #['relu', 'const'], # 'rescaled_sigmoid', #'relu', #
+        n=1 if mode == 'ERSR' else 256,
+        disable_lpfs=True,
+        optimizer_alg= 'RMSprop', # 'RMSprop',
+        n_seeds=n_seeds,
+        priority_intervals=priority_intervals,
+        priority_factor=priority_factor,
+        enable_sigma_b_tuning = False,
+        lr_bound = 0.999,
+        bound_weight_decay = True,
+        # direct_inj_limiter=0.45,
+    )
 # -----------------------
 # 2) Load all 16 subjects, build [T, B] tensors (pad with NaNs)
 # -----------------------
@@ -89,6 +227,8 @@ ys_tb   = torch.tensor(ys_tb_np, device=device)     # [T,B]
 a_exp_tb = torch.tensor(a_exp_tb_np, device=device)   # [T,B]
 if mode == 'MU':
     qs_tb = torch.tensor(qs_tb_np, device=device)     # [T,B]
+else:
+    qs_tb = None
 
 # -----------------------
 # 3) Forward helper: produce a_pred [T,B] using the batched model
@@ -123,7 +263,7 @@ def forward_tb(model, ys_tb, args, do_noise=False, qs_tb=None):
         noises=noises,         # list of [B]
         ys=ys_list,            # list of [B]
         model_setting=args.model,
-        qs=qs_list if mode == 'MU' else None,
+        qs= qs_list if mode == 'MU' else None,
     )
     return torch.stack(a_list, dim=0)  # [T,B]
 
@@ -131,47 +271,84 @@ def forward_tb(model, ys_tb, args, do_noise=False, qs_tb=None):
 # 4) Instantiate batched-parameter model and train on all 16 subjects at once
 # -----------------------
 # You must have BatchedElboGenerativeModelTop defined from the earlier response.
-model = BatchedElboGenerativeModelTop(device=device, args=args, batch_size=args.bs).to(device)
+model = BatchedElboGenerativeModelTopMulti(device=device, args=args, batch_size=args.bs).to(device)
 
-opt = torch.optim.Adam(model.parameters(), lr=1e-2)
+#optimiser is scheduled to reduce lr by sqrt10 every 1000 epochs
+if args.optimizer_alg == 'Adam':
+    Opti = torch.optim.Adam
+elif args.optimizer_alg == 'RMSprop':
+    Opti = torch.optim.RMSprop
+elif args.optimizer_alg == 'LBFGS':
+    Opti = torch.optim.LBFGS
+else:
+    raise ValueError(f"Unknown optimizer_alg: {args.optimizer_alg}")
+
+opt = Opti(model.parameters(), lr=1e-2)
+scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=5000, gamma=0.31622776601683794)  # sqrt(0.1)
+input_noise_scheduler = NoiseScheduler(initial_scale=0.3e-5, step_size=250, gamma=0.31622776601683794)
+output_noise_scheduler = NoiseScheduler(initial_scale=0.3e-5, step_size=250, gamma=0.31622776601683794)
+# priority_factor_scheduler = Scheduler(initial_value=priority_factor, step_size=100, gamma=0.31622776601683794) if priority_factor is not None else None
+priority_factor_scheduler = Scheduler(priority_factor, step_size=1e6, gamma=1.0) # no decay in priority factor for now
 
 for epoch in range(n_epochs):
-    model.train()
-    opt.zero_grad()
+    for substep in ['train', 'eval']:
+        if substep == 'eval' and epoch % 10 != 0 and epoch != n_epochs - 1:
+            continue  # only eval every 10 epochs to save time
+        if substep == 'train':
+            model.train()
+            opt.zero_grad()
+        else:
+            model.eval()
 
-    a_pred_tb = forward_tb(model, ys_tb, args, do_noise=False, qs_tb=qs_tb)  # [T,B]
+        if substep=='train':
+            ys_tb_ = ys_tb + input_noise_scheduler.get_noise(*ys_tb.shape, device=device)
+        else:
+            ys_tb_ = ys_tb
 
-    # loss: mean over subjects of per-subject MSE over available timepoints
-    # mask = ~torch.isnan(a_exp_tb)                                # [T,B]
-    # se = (a_pred_tb - a_exp_tb) ** 2
-    # se = torch.where(mask, se, torch.zeros_like(se))
+        a_pred_tb = forward_tb(model, ys_tb_, args, do_noise=False, qs_tb=qs_tb)  # [T,B]
 
-    # counts = mask.sum(dim=0).clamp_min(1)                       # [B]
-    # mse_per_subject = se.sum(dim=0) / counts                    # [B]
-    # loss = mse_per_subject.mean()
+        a_pred_tb = a_pred_tb + output_noise_scheduler.get_noise(*a_pred_tb.shape, device=device) if substep=='train' else a_pred_tb
 
-    mask = ~torch.isnan(a_exp_tb)                           # [T,B] bool
-    mask_f = mask.to(a_pred_tb.dtype)                      # [T,B] float
+        mask = ~torch.isnan(a_exp_tb)                           # [T,B] bool
+        mask_f = mask.to(a_pred_tb.dtype)                      # [T,B] float
 
-    a_exp_filled = torch.nan_to_num(a_exp_tb, nan=0.0)        # [T,B], no NaNs
-    diff = (a_pred_tb - a_exp_filled) * mask_f              # [T,B], masked; no NaNs
+        a_exp_filled = torch.nan_to_num(a_exp_tb, nan=0.0)        # [T,B], no NaNs
+        diff = (a_pred_tb - a_exp_filled) * mask_f              # [T,B], masked; no NaNs
+        if priority_factor_scheduler is not None and substep == 'train':
+            time_weights = torch.ones(Tmax, device=device)
+            # time_weights[:priority_up_to] = priority_factor_scheduler.get_value()
+            for start, end in priority_intervals:
+                if start is None:
+                    time_weights[:end] = priority_factor_scheduler.get_value()
+                elif end is None:
+                    time_weights[start:] = priority_factor_scheduler.get_value()
+                else:
+                    time_weights[start:end] = priority_factor_scheduler.get_value()
+            diff = diff * time_weights[:, None]  # apply time weights
 
-    se_sum = (diff * diff).sum(dim=0)                      # [B]
-    counts = mask.sum(dim=0).clamp_min(1)                  # [B]
-    mse_per_subject = se_sum / counts                      # [B]
-    loss = mse_per_subject.mean()                          # scalar
-
-    loss.backward()
-    opt.step()
+        se_sum = (diff * diff).sum(dim=0)                      # [B]
+        counts = mask.sum(dim=0).clamp_min(1)                  # [B]
+        mse_per_subject = se_sum / counts                      # [B]
+        loss = mse_per_subject.mean()                          # scalar
+        if substep == 'train':
+            loss.backward()
+            opt.step()
+            scheduler.step()
+            input_noise_scheduler.step()
+            output_noise_scheduler.step()
+            if priority_factor_scheduler is not None:
+                priority_factor_scheduler.step()
 
     if (epoch % 10) == 0 or epoch == n_epochs - 1:
         rmse_per_subject = torch.sqrt(mse_per_subject).detach().cpu().numpy().reshape(n_subjects, n_seeds)
-        best_rmse = rmse_per_subject.min(axis=1)
+        # best_rmse = rmse_per_subject.min(axis=1)
+        best_rmse = np.nanmin(rmse_per_subject, axis=1)  # [n_subjects]
         print(
             f"Epoch {epoch:04d} | "
-            f"loss(mean MSE)={loss.item():.6g} | "
-            f"rmse(mean)={rmse_per_subject.mean():.6g} | "
-            f"rmse(per-subject)=\n {np.round(rmse_per_subject, 4)} | "
+            # f"lr={opt.param_groups[0]['lr']:.6g} | "
+            # f"loss(mean MSE)={loss.item():.6g} | "
+            # f"rmse(mean)={rmse_per_subject.mean():.6g} | "
+            # f"rmse(per-subject)=\n {np.round(rmse_per_subject, 4)} | "
             f"best_rmse(per-subject)=\n {np.round(best_rmse, 4)}"
         )
 
@@ -192,32 +369,11 @@ with torch.no_grad():
 # 6) Outcome: batched optimised parameters (each is [B])
 # -----------------------
 with torch.no_grad():
-    print("\nOptimised per-subject params (each is [16]):")
-    print("sigma_b:", model.sigma_b.detach().cpu().numpy())
-    print("sp_weight_decay:", model.sp_weight_decay.detach().cpu().numpy())
-    print("log_learning_rate:", model.log_learning_rate.detach().cpu().numpy())
-    print("log_learning_rate_decay:", model.log_learning_rate_decay.detach().cpu().numpy())
-    if isinstance(model.output_scale, torch.Tensor) and model.output_scale.requires_grad:
-        print("output_scale:", model.output_scale.detach().cpu().numpy())
-    if isinstance(model.u_feedback_scale, torch.Tensor) and model.u_feedback_scale.requires_grad:
-        print("u_feedback_scale:", model.u_feedback_scale.detach().cpu().numpy())
-    if isinstance(model.q_scale, torch.Tensor) and model.q_scale.requires_grad:
-        print("q_scale:", model.q_scale.detach().cpu().numpy())
-    if isinstance(model.direct_injection_scale, torch.Tensor) and model.direct_injection_scale.requires_grad:
-        print("direct_injection_scale:", model.direct_injection_scale.detach().cpu().numpy())
-    # -----------------------
 
-
-# save best per-subject parameters
-    np.savetxt(result_dir + 'sigma_b.txt', model.sigma_b.detach().cpu().numpy())
-    np.savetxt(result_dir + 'sp_weight_decay.txt', model.sp_weight_decay.detach().cpu().numpy())
-    np.savetxt(result_dir + 'log_learning_rate.txt', model.log_learning_rate.detach().cpu().numpy())
-    np.savetxt(result_dir + 'log_learning_rate_decay.txt', model.log_learning_rate_decay.detach().cpu().numpy())
-    if isinstance(model.output_scale, torch.Tensor) and model.output_scale.requires_grad:
-        np.savetxt(result_dir + 'output_scale.txt', model.output_scale.detach().cpu().numpy())
-    if isinstance(model.u_feedback_scale, torch.Tensor) and model.u_feedback_scale.requires_grad:
-        np.savetxt(result_dir + 'u_feedback_scale.txt', model.u_feedback_scale.detach().cpu().numpy())
-    if isinstance(model.q_scale, torch.Tensor) and model.q_scale.requires_grad:
-        np.savetxt(result_dir + 'q_scale.txt', model.q_scale.detach().cpu().numpy())
-    if isinstance(model.direct_injection_scale, torch.Tensor) and model.direct_injection_scale.requires_grad:
-        np.savetxt(result_dir + 'direct_injection_scale.txt', model.direct_injection_scale.detach().cpu().numpy())
+# save models parameters
+    torch.save(model.state_dict(), result_dir + 'model_state_dict.pt')
+#save arguments as a yaml file
+    import yaml
+    with open(result_dir + 'args.yaml', 'w') as f:
+        yaml.dump(vars(args), f)
+# -----------------------
