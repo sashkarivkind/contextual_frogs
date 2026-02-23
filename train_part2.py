@@ -34,7 +34,9 @@ from optimise_clnn import load_subject_data
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_XLsigmoidFRMSprop/'
 
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_2ratesBound/'
-result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/clnn_2ratesU_Bound_v3LNG/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_3ratesNLdecays/'
+result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_1ratesNLdecaysBound/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/clnn_2ratesU_Bound_v3LNG/'
 
 os.makedirs(result_dir, exist_ok=True)
 # -----------------------
@@ -50,8 +52,8 @@ priority_intervals = [(None, 300), (1900, None)] # example: prioritize early and
 
 n_seeds = 128*2 if mode =='ERSR' else 32 #72  
 n_subjects = 16 if mode == 'ERSR' else 24
-n_epochs = 15000
-template = 'multirate' #'state-space' #'lr_reduct' #
+n_epochs = 1500
+template = 'state-space'#'multirate' #'state-space' #'lr_reduct' #
 
 class Scheduler:
     '''
@@ -153,7 +155,7 @@ elif template == 'state-space':
         enable_qlpf=False,
         enable_ylpf=False,
         enable_elpf=False,
-        multirate_m=2,          # 
+        multirate_m=1,          # 
         apply_lr_decay=False, #False,
         noise_injection_node='a',
         model_tie_lr_weight_decay=False,
@@ -179,6 +181,7 @@ elif template == 'state-space':
         enable_sigma_b_tuning = False,
         lr_bound = 0.999,
         bound_weight_decay = True,
+        enable_weight_decay_exp = True,
         # direct_inj_limiter=0.45,
     )
 # -----------------------
@@ -284,7 +287,7 @@ else:
     raise ValueError(f"Unknown optimizer_alg: {args.optimizer_alg}")
 
 opt = Opti(model.parameters(), lr=1e-2)
-scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=5000, gamma=0.31622776601683794)  # sqrt(0.1)
+scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=500, gamma=0.31622776601683794)  # sqrt(0.1)
 input_noise_scheduler = NoiseScheduler(initial_scale=0.3e-5, step_size=250, gamma=0.31622776601683794)
 output_noise_scheduler = NoiseScheduler(initial_scale=0.3e-5, step_size=250, gamma=0.31622776601683794)
 # priority_factor_scheduler = Scheduler(initial_value=priority_factor, step_size=100, gamma=0.31622776601683794) if priority_factor is not None else None

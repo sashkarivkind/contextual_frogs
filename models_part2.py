@@ -342,6 +342,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "lr_bound": None,  #CHANGED: new argument for learning rate bound
             "enable_sigma_b_tuning": True,  #CHANGED: whether to make sigma_b learnable
             "bound_weight_decay": False,  #CHANGED: whether to apply a bound to weight decay similar to lr_bound
+            "enable_weight_decay_exp": False,  #CHANGED: whether to enable weight_decay_exp 
         }  #CHANGED
         self.mult_activation_mode = isinstance(args.nl_activation, list)
 
@@ -449,6 +450,11 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             self.u_feedback_scale = torch.ones(self.bs, device=device, requires_grad=False)
 
         self.sp_weight_decay = nn.Parameter(init_sp_weight_decay)  #CHANGED: [bs, m]
+
+        if args.enable_weight_decay_exp:
+            self.weight_decay_exp = nn.Parameter(torch.full((self.bs, self.m), 1.0, device=device))
+        else:
+            self.weight_decay_exp = torch.ones((self.bs, self.m), device=device, requires_grad=False)
 
         if args.enable_q_scale_tuning:
             self.q_scale = nn.Parameter(randu((self.bs,), 0.3, 1.5))
@@ -727,7 +733,11 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             else:
                 decay = wd.unsqueeze(1)         #CHANGED: [bs,1,m]
 
-            dw_out = dw_out - decay * w_out  #CHANGED
+            if self.args.enable_weight_decay_exp is not None:
+                w_out_ = torch.sign(w_out) * torch.abs(w_out).pow(self.weight_decay_exp.unsqueeze(1))  #CHANGED: [bs,n,m], with separate exponent per subpopulation
+            else:
+                w_out_ = w_out  #CHANGED: [bs,n,m]
+            dw_out = dw_out - decay * w_out_  #CHANGED
             w_out = w_out + dw_out           #CHANGED
 
             # lr update (disabled in your stated configuration: args.apply_lr_decay=False)
