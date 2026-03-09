@@ -343,6 +343,10 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "enable_sigma_b_tuning": True,  #CHANGED: whether to make sigma_b learnable
             "bound_weight_decay": False,  #CHANGED: whether to apply a bound to weight decay similar to lr_bound
             "enable_weight_decay_exp": False,  #CHANGED: whether to enable weight_decay_exp 
+            "enable_weight_learning_exp": False,  #CHANGED: whether to enable weight_learning_exp
+            "enable_bias_update": False, 
+            'develop_b_tgt': 0.0, 
+            'enable_w_in_plasticity': False,
         }  #CHANGED
         self.mult_activation_mode = isinstance(args.nl_activation, list)
 
@@ -456,6 +460,11 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         else:
             self.weight_decay_exp = torch.ones((self.bs, self.m), device=device, requires_grad=False)
 
+        if args.enable_weight_learning_exp:
+            self.weight_learning_exp = nn.Parameter(torch.full((self.bs, self.m), 1.0, device=device))
+        else:
+            self.weight_learning_exp = torch.ones((self.bs, self.m), device=device, requires_grad=False)
+
         if args.enable_q_scale_tuning:
             self.q_scale = nn.Parameter(randu((self.bs,), 0.3, 1.5))
         else:
@@ -471,6 +480,13 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             self.sigma_x = nn.Parameter(init_sigma_x)
         else:
             self.sigma_x = torch.full((self.bs,), float(args.toymodel_OUsigma_process), device=device, requires_grad=False)
+
+        if args.enable_w_in_plasticity:
+            self.w_in_lr = nn.Parameter(randu((self.bs,), 0.001, 0.1))  # [bs]
+            self.w_in_decay = nn.Parameter(randu((self.bs,), 0.0, 0.99))  # [bs]
+
+
+        self.bias_lr = nn.Parameter(torch.full((self.bs,), 0.0, device=device)) if args.enable_bias_update else torch.zeros(self.bs, device=device, requires_grad=False)
 
         # filters / injection (per batch)
         self.tauqlpf_m1 = nn.Parameter(torch.full((self.bs,), -1.0, device=device)) if args.enable_qlpf else torch.full((self.bs,), -1000.0, device=device, requires_grad=False)
@@ -564,6 +580,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
 
         # state init (per batch)
         w_out = torch.zeros(bs, n, self.m, device=device)  #CHANGED: [bs,n,m]
+        bias_tuning = torch.zeros(bs, n, device=device)  
         u = torch.zeros(bs, device=device)
         x = torch.zeros(bs, device=device)
         e = torch.zeros(bs, device=device)
@@ -601,6 +618,9 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             wd = self.args.weight_decay_max*torch.nn.functional.sigmoid(self.sp_weight_decay)  #CHANGED: [bs,m]  #CHANGED: scale by lr*n as in original code
         else:
             raise ValueError(f"Unknown weight_decay_mode {self.args.weight_decay_mode}")
+        
+        if self.args.enable_w_in_plasticity:
+            w_in_tuning = torch.zeros(bs, n, device=device) + 1.0#0.5 # [bs,n]
 
         if self.args.bound_weight_decay:
             # a = 1-wd
@@ -643,6 +663,21 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 + e
             )
 
+            if self.args.enable_w_in_plasticity:
+                w_in_ = w_in.unsqueeze(0) + w_in_tuning*torch.sign(w_in.unsqueeze(0))  # [b,n]
+            else:
+                w_in_ = w_in.unsqueeze(0)  # [1,n]
+
+            if self.args.enable_bias_update:
+                biases_ = biases + bias_tuning
+                preact = + (x.unsqueeze(1) * w_in_)  + scaled_q_in
+                # bias_tuning = bias_tuning + (0.5+preact - biases_) * self.bias_lr 
+                bias_tuning = bias_tuning + (self.args.develop_b_tgt+preact - biases_) * self.bias_lr 
+                #the tuning will hold until the next timestep
+
+            else:
+                biases_ = biases  # [bs,n]
+
             mask = torch.isnan(y)  # [bs]
 
             if self.args.injection_opt == 1:
@@ -650,14 +685,15 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
 
             # hidden
             h = self.phi(
-                biases
-                + (x.unsqueeze(1) * w_in.unsqueeze(0))
+                biases_
+                + (x.unsqueeze(1) * w_in_)
                 + scaled_q_in
             )  # [bs,n] or [bs,n,li] if mult_activation_mode
 
             #CHANGED: sum subpopulations first: w_out [bs,n,m] -> w_eff [bs,n]
             w_eff = w_out.sum(dim=2) if not self.mult_activation_mode else w_out  #CHANGED: [bs,n]
             summing_directive = "kj,kj->k" if not self.mult_activation_mode else "kji,kji->k"
+            # print(f"w_eff shape: {w_eff.shape}, h shape: {h.shape}, summing_directive: {summing_directive}")
             u = torch.einsum(summing_directive, w_eff, h)  #CHANGED (same einsum, different weight tensor)
             u = u + self.args.skip_gain * x
 
@@ -683,8 +719,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                     raise ValueError("injection_opt2 incompatible with noise_injection_node 'x' yet")
                 x_prime = u * self.u_feedback_scale + e
                 h_prime = self.phi(
-                    biases
-                    + (x_prime.unsqueeze(1) * w_in.unsqueeze(0))
+                    biases_
+                    + (x_prime.unsqueeze(1) * w_in_)
                     + scaled_q_in
                 )
                 inj_col = inj_.unsqueeze(1)  # [bs,1]
@@ -696,8 +732,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 inj_col = inj_
                 x_bar = (1.0 - inj_col) * x + inj_col * x_prime
                 h_bar = self.phi(
-                    biases
-                    + (x_bar.unsqueeze(1) * w_in.unsqueeze(0))
+                    biases_
+                    + (x_bar.unsqueeze(1) * w_in_)
                     + scaled_q_in
                 )
             else:
@@ -708,9 +744,16 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             # elp:  [bs]   -> [bs,1,1]
             # hbar: [bs,n] -> [bs,n,1]
             
+
+            if self.args.enable_weight_learning_exp:
+                # print(f"elp before learning exp: {elp.shape}, weight_learning_exp: {self.weight_learning_exp.shape}")
+                elp_ = torch.sign(elp.unsqueeze(1)) * torch.abs(elp.unsqueeze(1)).pow(self.softplus(self.weight_learning_exp))  #CHANGED: [bs,n,m], with separate exponent per subpopulation
+            else:
+                elp_ = elp.unsqueeze(1)  #CHANGED: [bs,n,m]
+
             dw_out = (
                 lr.unsqueeze(1)                          #CHANGED
-                * elp.unsqueeze(1).unsqueeze(2)          #CHANGED
+                * elp_.unsqueeze(2)          #CHANGED
                 * h_bar                     #CHANGED
             )  #CHANGED: [bs,n,m]
             # else:
@@ -733,13 +776,20 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             else:
                 decay = wd.unsqueeze(1)         #CHANGED: [bs,1,m]
 
-            if self.args.enable_weight_decay_exp is not None:
+            if self.args.enable_weight_decay_exp:
                 w_out_ = torch.sign(w_out) * torch.abs(w_out).pow(self.weight_decay_exp.unsqueeze(1))  #CHANGED: [bs,n,m], with separate exponent per subpopulation
             else:
                 w_out_ = w_out  #CHANGED: [bs,n,m]
             dw_out = dw_out - decay * w_out_  #CHANGED
             w_out = w_out + dw_out           #CHANGED
 
+            if self.args.enable_w_in_plasticity:
+                if self.mult_activation_mode:
+                    raise ValueError("w_in plasticity not yet implemented for mult_activation_mode yet")
+                # print(f'w_in_tuning before: {w_in_tuning.shape}, elp: {elp.shape}, h_bar: {h_bar.shape}, w_in_lr: {self.w_in_lr.shape}, w_in_decay: {self.w_in_decay.shape}')
+                w_in_tuning = (1 - self.w_in_decay.unsqueeze(1)) * w_in_tuning  + self.w_in_lr.unsqueeze(1) * h_bar.squeeze(2)
+                #for backprop....torch.einsum("k,ki->i", elp, h_bar.squeeze(2) if self.mult_activation_mode else h_bar)  # [n]
+                # print(f'w_in_tuning after: {w_in_tuning[0,:20]}, w_in_: {w_in_[0,:20]}, h_bar: {h_bar[0,:20,:]}')#, elp: {elp[0,:20]}')
             # lr update (disabled in your stated configuration: args.apply_lr_decay=False)
             if self.args.apply_lr_decay:
                 lr_mult = self.args.lr_min_mult + (lr_mult - self.args.lr_min_mult) * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))  #CHANGED: elementwise [bs,m]

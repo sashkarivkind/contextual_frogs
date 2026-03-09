@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from models_part2 import BatchedElboGenerativeModelTopMulti
 import os
 from optimise_clnn import load_subject_data
-
+from utils_part2 import load_data_to_batch
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMulti104trySchV2_m2u/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop/'
@@ -24,7 +24,8 @@ from optimise_clnn import load_subject_data
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatAdam_M2noAnoLRD_inj_REDO_NoiNewICSWeights/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_injMU_AmpliBeginEndX20/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_injMU/'
-# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/zz1_deleteme/'
+#result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/zz1_deleteme/'
+result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_group1_CLNNm2U/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/experimental_uMUm2/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/experimental_um2a_resc_sig/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3withSaves/'
@@ -35,26 +36,51 @@ from optimise_clnn import load_subject_data
 
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_2ratesBound/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_3ratesNLdecays/'
-result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_1ratesNLdecaysBound/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_1ratesNLdecaysBound/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_1ratesNLdecaysNLerror/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/clnn_2ratesU_Bound_v3LNG/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/clnn_2ratesU_Bound_NLerror/'
 
 os.makedirs(result_dir, exist_ok=True)
 # -----------------------
 # 1) Setup (match your routine)
 # -----------------------
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-mode =  'ERSR' #'ERSR' #'MU' 
-paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
+mode =  'Lerner1' #'ERSR' #'MU' 
+model_specific_seed_factor = 1
+# paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
 
 priority_factor = 1 #10
 # priority_up_to = 205
 priority_intervals = [(None, 300), (1900, None)] # example: prioritize early and late time points
 
-n_seeds = 128*2 if mode =='ERSR' else 32 #72  
-n_subjects = 16 if mode == 'ERSR' else 24
-n_epochs = 1500
-template = 'state-space'#'multirate' #'state-space' #'lr_reduct' #
+n_subjects_LUT = {
+    'ERSR': 16,
+    'MU': 24,
+    'Lerner1': 16, # for these paradigms we code last paritcipant to be the average.
+    'Lerner2': 21,
+    'Lerner3': 20,
+    'Lerner4': 19,
+    'Lerner5': 21,
+}
 
+n_seeds_baseline_LUT = { #this can be modified according to the model of interest
+    'ERSR': 128,
+    'MU': 32,
+    'Lerner1': 128,
+    'Lerner2': 128,
+    'Lerner3': 128,
+    'Lerner4': 128,
+    'Lerner5': 128,
+}
+
+
+n_subjects = n_subjects_LUT[mode]   
+n_seeds = n_seeds_baseline_LUT[mode] * model_specific_seed_factor #72  
+# n_subjects = 16 if mode == 'ERSR' else 24
+n_epochs = 1500
+template = 'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+lr = 1e-2# 3e-3 #1e-2
 class Scheduler:
     '''
     Docstring for Scheduler
@@ -97,7 +123,7 @@ if template == 'lr_reduct':
         bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
         zzz_legacy_init=False,
         enable_output_scale_tuning= True, #False,# mode == 'MU',
-        enable_u_feedback_scale_tuning=False, #True,
+        enable_u_feedback_scale_tuning=True, #True,
         enable_direct_injection= True , #mode == 'MU',
         injection_opt=3,            # you’re using opt=2 in the model code
         skip_gain=0.0,
@@ -127,9 +153,9 @@ elif template == 'multirate':
         bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
         zzz_legacy_init=False,
         enable_output_scale_tuning= False, #False,# mode == 'MU',
-        enable_u_feedback_scale_tuning=True, #True,
-        enable_direct_injection= True , #mode == 'MU',
-        injection_opt=3,            # you’re using opt=2 in the model code
+        enable_u_feedback_scale_tuning=False, #True,
+        enable_direct_injection= False , #mode == 'MU',
+        injection_opt=53,            # you’re using opt=2 in the model code
         skip_gain=0.0,
         channel_trial_extra_error=0.0,
         lr_min_mult = 1e-1,
@@ -143,8 +169,10 @@ elif template == 'multirate':
         n_seeds=n_seeds,
         priority_intervals=priority_intervals,
         priority_factor=priority_factor,
-        lr_bound = 1./512.,
-        bound_weight_decay = True,
+        lr_bound = None,# 1./512.,
+        bound_weight_decay = False,
+        enable_weight_learning_exp = False,
+
         # direct_inj_limiter=0.45,
     )
 elif template == 'state-space':
@@ -172,44 +200,51 @@ elif template == 'state-space':
         # weight_decay_mode='clipped_sigmoid',
         weight_decay_max=1.0,
         nl_activation='const', #['relu', 'const'], # 'rescaled_sigmoid', #'relu', #
-        n=1 if mode == 'ERSR' else 256,
+        n=1, # if mode == 'ERSR' else 256,
         disable_lpfs=True,
         optimizer_alg= 'RMSprop', # 'RMSprop',
         n_seeds=n_seeds,
         priority_intervals=priority_intervals,
         priority_factor=priority_factor,
         enable_sigma_b_tuning = False,
-        lr_bound = 0.999,
-        bound_weight_decay = True,
-        enable_weight_decay_exp = True,
+        lr_bound = 0.99,
+        bound_weight_decay = False,
+        enable_weight_decay_exp = False,
+        enable_weight_learning_exp = False,
         # direct_inj_limiter=0.45,
     )
 # -----------------------
 # 2) Load all 16 subjects, build [T, B] tensors (pad with NaNs)
 # -----------------------
-all_ys = []
-all_a_exp = []
-all_qs = []
-lengths = []
 
-for k in range(1, n_subjects + 1):
-    if mode == 'ERSR':
-        csv_path = f'/homes/ar2342/frogs_project/data/COIN_data/trial_data_{paradigm_[k]}_recovery_participant{(k-1)%8+1}.csv'
-    else:
-        csv_path = f'/homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant{k}.csv'
-    experimental_data = load_subject_data(csv_path)
+# def load_data_to_batch(n_subjects, n_seeds, mode, **kwargs):
+#     all_ys = []
+#     all_a_exp = []
+#     all_qs = []
+#     lengths = []
+#     paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
+#     for k in range(1, n_subjects + 1):
+#         if mode == 'ERSR':
+#             csv_path = f'/homes/ar2342/frogs_project/data/COIN_data/trial_data_{paradigm_[k]}_recovery_participant{(k-1)%8+1}.csv'
+#         else:
+#             csv_path = f'/homes/ar2342/frogs_project/data/COIN_data/trial_data_memory_updating_participant{k}.csv'
+#         experimental_data = load_subject_data(csv_path)
 
-    a_exp = np.asarray(experimental_data[0], dtype=np.float32)  # target (your a_exp)
-    ys    = np.asarray(experimental_data[1], dtype=np.float32)  # input ys (your ys)
-    if mode == 'MU':
-        qs = np.asarray(experimental_data[2], dtype=np.float32)  # input qs (your qs)
+#         a_exp = np.asarray(experimental_data[0], dtype=np.float32)  # target (your a_exp)
+#         ys    = np.asarray(experimental_data[1], dtype=np.float32)  # input ys (your ys)
+#         if mode == 'MU':
+#             qs = np.asarray(experimental_data[2], dtype=np.float32)  # input qs (your qs)
 
-    for _ in range(n_seeds):
-        all_a_exp.append(a_exp)
-        all_ys.append(ys)
-        if mode == 'MU':
-            all_qs.append(qs)
-        lengths.append(len(a_exp))
+#         for _ in range(n_seeds):
+#             all_a_exp.append(a_exp)
+#             all_ys.append(ys)
+#             if mode == 'MU':
+#                 all_qs.append(qs)
+#             lengths.append(len(a_exp))
+#     return all_ys, all_a_exp, all_qs, lengths
+
+all_ys, all_a_exp, all_qs, lengths = load_data_to_batch(n_subjects, n_seeds, mode)
+
 
 Tmax = int(max(lengths))
 B = n_subjects * n_seeds
@@ -286,7 +321,7 @@ elif args.optimizer_alg == 'LBFGS':
 else:
     raise ValueError(f"Unknown optimizer_alg: {args.optimizer_alg}")
 
-opt = Opti(model.parameters(), lr=1e-2)
+opt = Opti(model.parameters(), lr=lr) #-2
 scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=500, gamma=0.31622776601683794)  # sqrt(0.1)
 input_noise_scheduler = NoiseScheduler(initial_scale=0.3e-5, step_size=250, gamma=0.31622776601683794)
 output_noise_scheduler = NoiseScheduler(initial_scale=0.3e-5, step_size=250, gamma=0.31622776601683794)
