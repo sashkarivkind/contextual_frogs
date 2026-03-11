@@ -12,6 +12,10 @@ from utils_part2 import load_data_to_batch
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMulti104trySchV2_m2u/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop/'
+
+result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWinj0/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_LRmin_basicBwdCapatRMSprop_NEW/'
+
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_LRflr1em1/'
 
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD/'
@@ -25,7 +29,8 @@ from utils_part2 import load_data_to_batch
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_injMU_AmpliBeginEndX20/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_M2noAnoLRD_injMU/'
 #result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/zz1_deleteme/'
-result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_group1_CLNNm2U/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_group1_CLNNm2U/'
+result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_group1_CLNNm1Xconsolidation/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/experimental_uMUm2/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/experimental_um2a_resc_sig/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3withSaves/'
@@ -35,18 +40,20 @@ result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_g
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_XLsigmoidFRMSprop/'
 
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_2ratesBound/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_2ratesXconsolidation/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_3ratesNLdecays/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_1ratesNLdecaysBound/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/state_space_1ratesNLdecaysNLerror/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/clnn_2ratesU_Bound_v3LNG/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/clnn_2ratesU_Bound_NLerror/'
 
-os.makedirs(result_dir, exist_ok=True)
+os.makedirs(result_dir, exist_ok=False)
 # -----------------------
 # 1) Setup (match your routine)
 # -----------------------
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 mode =  'Lerner1' #'ERSR' #'MU' 
+# mode =  'ERSR' #'MU' 
 model_specific_seed_factor = 1
 # paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
 
@@ -79,7 +86,7 @@ n_subjects = n_subjects_LUT[mode]
 n_seeds = n_seeds_baseline_LUT[mode] * model_specific_seed_factor #72  
 # n_subjects = 16 if mode == 'ERSR' else 24
 n_epochs = 1500
-template = 'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+template ='multirate'#'lr_reduct' #'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
 lr = 1e-2# 3e-3 #1e-2
 class Scheduler:
     '''
@@ -123,12 +130,12 @@ if template == 'lr_reduct':
         bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
         zzz_legacy_init=False,
         enable_output_scale_tuning= True, #False,# mode == 'MU',
-        enable_u_feedback_scale_tuning=True, #True,
-        enable_direct_injection= True , #mode == 'MU',
-        injection_opt=3,            # you’re using opt=2 in the model code
+        enable_u_feedback_scale_tuning=False, #True,
+        enable_direct_injection= False , #mode == 'MU',
+        injection_opt=0,            # you’re using opt=2 in the model code
         skip_gain=0.0,
         channel_trial_extra_error=0.0,
-        lr_min_mult = 1e-1,
+        lr_min_mult = 1e-3,
         weight_decay_mode='softplus', #'sigmoid', #
         # weight_decay_mode='sigmoid',
         nl_activation='relu',
@@ -146,7 +153,7 @@ elif template == 'multirate':
         enable_qlpf=False,
         enable_ylpf=False,
         enable_elpf=False,
-        multirate_m=2,          # 
+        multirate_m=1,          # 
         apply_lr_decay=False, #False,
         noise_injection_node='a',
         model_tie_lr_weight_decay=False,
@@ -155,7 +162,7 @@ elif template == 'multirate':
         enable_output_scale_tuning= False, #False,# mode == 'MU',
         enable_u_feedback_scale_tuning=False, #True,
         enable_direct_injection= False , #mode == 'MU',
-        injection_opt=53,            # you’re using opt=2 in the model code
+        injection_opt=0,            # 
         skip_gain=0.0,
         channel_trial_extra_error=0.0,
         lr_min_mult = 1e-1,
@@ -172,6 +179,8 @@ elif template == 'multirate':
         lr_bound = None,# 1./512.,
         bound_weight_decay = False,
         enable_weight_learning_exp = False,
+        x_update_mode='consolidate_to_slow',# 'two_lpfs',#'vanilla',#
+
 
         # direct_inj_limiter=0.45,
     )

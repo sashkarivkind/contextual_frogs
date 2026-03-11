@@ -347,9 +347,12 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "enable_bias_update": False, 
             'develop_b_tgt': 0.0, 
             'enable_w_in_plasticity': False,
+            'x_update_mode': 'vanilla',  #CHANGED: new argument for x update mode; options: 'vanilla', 'two_lpfs'
+            'x_update_combine_mode': 'equal_mix',  #CHANGED: new argument for x update combine mode
+
         }  #CHANGED
         self.mult_activation_mode = isinstance(args.nl_activation, list)
-
+        self.device = device
         for key, value in default_args.items():
             if not hasattr(args, key):
                 setattr(args, key, value)
@@ -500,6 +503,15 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         self.register_buffer("_w_in", torch.empty(0))      # random input features, shape [n]
         self.register_buffer("_w_inq", torch.empty(0))     # random input features for q, shape [n]
 
+        if args.x_update_mode == 'two_lpfs':
+            self.x_fast_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))  # [bs]
+            self.x_slow_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))  # [bs]
+        elif args.x_update_mode == 'consolidate_to_slow':
+            self.x_slow_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))  # [bs]
+            self.x_fast_gain = nn.Parameter(torch.full((self.bs,), 0.5, device=device))  # [bs]
+        elif args.x_update_mode == 'u_only_lpf':
+            self.x_slow_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))  # [bs]
+
         self.args = args
         self.fudge = fudge
 
@@ -561,6 +573,124 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             raise ValueError(f"Expected time-slice with shape [bs]={bs}, got {tuple(tval.shape)}")
         return tval
 
+    def _assign_wd(self, lr0, n):
+        if self.args.weight_decay_mode == 'softplus':
+            wd = self.softplus(self.sp_weight_decay)  #CHANGED: [bs,m]
+        elif self.args.weight_decay_mode == 'sigmoid':
+            wd = self.args.lr_min_mult * lr0 * n *torch.nn.functional.sigmoid(self.sp_weight_decay)  #CHANGED: [bs,m]  #CHANGED: scale by lr*n as in original code
+        elif self.args.weight_decay_mode == 'clipped_sigmoid':
+            wd = self.args.weight_decay_max*torch.nn.functional.sigmoid(self.sp_weight_decay)  #CHANGED: [bs,m]  #CHANGED: scale by lr*n as in original code
+        else:
+            raise ValueError(f"Unknown weight_decay_mode {self.args.weight_decay_mode}")
+        
+        if self.args.bound_weight_decay:
+            wd_bound = 1.0 - lr0*self.args.n  # [bs,m]
+            #softly bound wd to be less than wd_bound
+            wd = wd_bound * torch.tanh(wd / wd_bound)  # [bs,m]
+        return wd
+    
+    def _init_lr(self,bs):
+        lr_mult = torch.ones(bs, self.m, device=self.device)  #CHANGED: [bs,m]
+        lr0 = torch.exp(self.log_learning_rate)  #CHANGED: [bs,m]
+        if self.args.lr_bound is not None:
+            total_lr0 = torch.einsum("km->k", lr0)  # [bs]
+            target_total_lr0 = self.args.lr_bound*torch.tanh(total_lr0 / self.args.lr_bound)  # [bs], smoothly approaches lr_bound for large total_lr0
+            lr0 = lr0 * (target_total_lr0 / total_lr0).unsqueeze(1)  
+            self.debug_lr0 = lr0  # for debugging: track the pre-multiplier learning rates after bounding
+        lr = lr0 * lr_mult  #CHANGED: [bs,m]
+        return lr, lr0, lr_mult
+    
+    def _prep_inputs(self, y, noise_x, q, bs):
+            # y handling
+            if y is None:
+                y = torch.full((bs,), np.double("nan"), device=self.device)
+            else:
+                y = self._expand_time_input(y, bs)
+
+            q = self._expand_time_input(q if q is not None else torch.zeros((1,), device=self.device), bs)
+            noise_x = self._expand_time_input(noise_x, bs)
+            return y, noise_x, q
+    
+    def _lowpass_filter(self, new_value, prev_lp, tau, enable):
+        if enable:
+            return (1.0 - 1.0 / tau) * prev_lp + (1.0 / tau) * new_value
+        else:
+            return new_value
+    
+    def _calculate_h_bar(self, h, biases_, x, w_in_, u, e, scaled_q_in, inj_, mode=None, x_state=None):
+            # injection_opt == 2: leak perturbation into hidden
+            if mode == 2:
+                if self.args.noise_injection_node == "x":
+                    raise ValueError("injection_opt2 incompatible with noise_injection_node 'x' yet")
+                # x_prime = u * self.u_feedback_scale + e
+                x_prime, _ = self._update_x(x, u, e, x_state)
+                h_prime = self.phi(
+                    biases_
+                    + (x_prime.unsqueeze(1) * w_in_)
+                    + scaled_q_in
+                )
+                inj_col = inj_.unsqueeze(1)  # [bs,1]
+                h_bar = (1.0 - inj_col) * h + inj_col * h_prime
+            elif mode == 3:
+                if self.args.noise_injection_node == "x":
+                    raise ValueError("injection_opt3 incompatible with noise_injection_node 'x' yet")
+                x_prime, _ = self._update_x(x, u, e, x_state)
+                inj_col = inj_
+                x_bar = (1.0 - inj_col) * x + inj_col * x_prime
+                h_bar = self.phi(
+                    biases_
+                    + (x_bar.unsqueeze(1) * w_in_)
+                    + scaled_q_in
+                )
+            elif mode == 0:
+                h_bar = h
+            else:
+                raise ValueError(f"Unknown injection_opt mode {mode}")
+            return h_bar
+    
+    def _compute_scaled_q_in(self, prescaled_w_inq, qlp):
+            #scaled q input: [bs,n]
+            if prescaled_w_inq is not None:
+                q_gain = (self.q_scale * qlp).unsqueeze(1)  # [bs,1]
+                scaled_q_in = prescaled_w_inq.unsqueeze(0) * q_gain  # [bs,n]
+            else:
+                scaled_q_in = 0.0
+            return scaled_q_in
+    
+    def _update_x(self, x, u, elp, x_state):
+            this_fbk_signal = u * self.u_feedback_scale + elp
+            if self.args.x_update_mode == 'vanilla':
+                return this_fbk_signal, x_state
+            elif self.args.x_update_mode == 'two_lpfs':
+                if x_state is None:
+                    raise ValueError("x_state must be provided for dual-rate x update")
+                x_slow, x_fast = x_state
+                x_slow_new = self.x_slow_alpha * x_slow + (1 - self.x_slow_alpha) * this_fbk_signal
+                x_fast_new = self.x_fast_alpha * x_fast + (1 - self.x_fast_alpha) * this_fbk_signal
+                if self.args.x_update_combine_mode == 'equal_mix':
+                    x_bar = 0.5 * x_slow_new + 0.5 * x_fast_new
+                elif self.args.x_update_combine_mode == 'learned_mix':
+                    x_bar = self.x_slow_weight * x_slow_new + self.x_fast_weight * x_fast_new
+                else:                    
+                    raise ValueError(f"Unknown x_update_combine_mode {self.args.x_update_combine_mode}")
+                return x_bar, (x_slow_new, x_fast_new)
+            elif self.args.x_update_mode == 'consolidate_to_slow':
+                if x_state is None:
+                    raise ValueError("x_state must be provided for consolidate_to_slow x update")
+                x_slow, x_fast = x_state
+                x_slow_new = self.x_slow_alpha * x_slow + (1 - self.x_slow_alpha) * this_fbk_signal
+                x_fast_new = self.x_fast_gain * (this_fbk_signal - x_slow)
+                x_bar = x_slow_new + x_fast_new
+                return x_bar, (x_slow_new, x_fast_new)
+            elif self.args.x_update_mode == 'u_only_lpf':
+                x_slow, x_fast = x_state
+
+                x_slow_new = self.x_slow_alpha * x_slow + (1 - self.x_slow_alpha) * u * self.u_feedback_scale
+                x_bar = elp + x_slow_new
+                return  x_bar, (x_slow_new, None)
+            else:
+                raise ValueError(f"Unknown x_update_mode {self.args.x_update_mode}")
+
     def f(
         self,
         n: int,
@@ -569,12 +699,15 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         model_setting: str,
         qs: Optional[List[Optional[torch.Tensor]]] = None,  # list of [bs] or [1] or None
     ) -> List[torch.Tensor]:
+        
+        #assertions
         assert len(noises) == len(ys), "noises and ys must have same length"
+        assert model_setting in ["default"], "model_setting must be 'default' for this model class"
         bs = noises[0].shape[0]
-        if bs != self.bs:
-            raise ValueError(f"Model was initialized with bs={self.bs}, but got input bs={bs}")
-
-        device = self.log_learning_rate.device
+        assert bs == self.bs, f"Model was initialized with bs={self.bs}, but got input bs={bs}"
+        
+        #initialisations
+        device = self.device
         biases, w_in = self.get_biases_and_w_in(n=n, device=device)  # biases [bs,n], w_in [n]
         prescaled_w_inq = self.get_winq(n=n, device=device) if qs is not None else None  # [n] or None
 
@@ -585,83 +718,49 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         x = torch.zeros(bs, device=device)
         e = torch.zeros(bs, device=device)
 
-        lr_mult = torch.ones(bs, self.m, device=device)  #CHANGED: [bs,m]
-        if not self.args.disable_lpfs:
-            qlp = torch.zeros(bs, device=device)
-            ylp = torch.zeros(bs, device=device)
-            elp = torch.zeros(bs, device=device)
-            tauqlpf = 1.0 + self.softplus(self.tauqlpf_m1)  # [bs]
-            tauylpf = 1.0 + self.softplus(self.tauylpf_m1)  # [bs]
-            tauelpf = 1.0 + self.softplus(self.tauelpf_m1)  # [bs]
+        lr, lr0, lr_mult = self._init_lr(bs)
+        wd = self._assign_wd(lr0, n)
 
-        lr0 = torch.exp(self.log_learning_rate)  #CHANGED: [bs,m]
-        if self.args.lr_bound is not None:
-            total_lr0 = torch.einsum("km->k", lr0)  # [bs]
-            target_total_lr0 = self.args.lr_bound*torch.tanh(total_lr0 / self.args.lr_bound)  # [bs], smoothly approaches lr_bound for large total_lr0
-            lr0 = lr0 * (target_total_lr0 / total_lr0).unsqueeze(1)  
-            self.debug_lr0 = lr0  # for debugging: track the pre-multiplier learning rates after bounding
-        lr = lr0 * lr_mult  #CHANGED: [bs,m]
-
-        inj_ = torch.nn.functional.sigmoid(self.direct_injection_scale) * self.args.direct_inj_limiter  # [bs]
-
-        # default qs if none
-        if qs is None:
+        if qs is None:# default qs if none
             qs = [torch.zeros((1,), device=device)] * len(ys)
 
-        a_means: List[torch.Tensor] = []
+        # if not self.args.disable_lpfs:
+        qlp = torch.zeros(bs, device=device)
+        ylp = torch.zeros(bs, device=device)
+        elp = torch.zeros(bs, device=device)
+        tauqlpf = 1.0 + self.softplus(self.tauqlpf_m1)  # [bs]
+        tauylpf = 1.0 + self.softplus(self.tauylpf_m1)  # [bs]
+        tauelpf = 1.0 + self.softplus(self.tauelpf_m1)  # [bs]
 
-        if self.args.weight_decay_mode == 'softplus':
-            wd = self.softplus(self.sp_weight_decay)  #CHANGED: [bs,m]
-        elif self.args.weight_decay_mode == 'sigmoid':
-            wd = self.args.lr_min_mult * lr0 * n *torch.nn.functional.sigmoid(self.sp_weight_decay)  #CHANGED: [bs,m]  #CHANGED: scale by lr*n as in original code
-        elif self.args.weight_decay_mode == 'clipped_sigmoid':
-            wd = self.args.weight_decay_max*torch.nn.functional.sigmoid(self.sp_weight_decay)  #CHANGED: [bs,m]  #CHANGED: scale by lr*n as in original code
+        if self.args.x_update_mode in ['two_lpfs', 'consolidate_to_slow', 'u_only_lpf']:
+            x_slow = torch.zeros(bs, device=device)
+            x_fast = torch.zeros(bs, device=device)
+            x_state = (x_slow, x_fast)
         else:
-            raise ValueError(f"Unknown weight_decay_mode {self.args.weight_decay_mode}")
+            x_state = None
+
+
+        inj_ = torch.nn.functional.sigmoid(self.direct_injection_scale) * self.args.direct_inj_limiter  # [bs]
         
         if self.args.enable_w_in_plasticity:
             w_in_tuning = torch.zeros(bs, n, device=device) + 1.0#0.5 # [bs,n]
 
-        if self.args.bound_weight_decay:
-            # a = 1-wd
-            # 0 < lam = a - lr0
-            # => lr0 < a
-            # wd < 1 - lr0
-            wd_bound = 1.0 - lr0*self.args.n  # [bs,m]
-            #softly bound wd to be less than wd_bound
-            wd = wd_bound * torch.tanh(wd / wd_bound)  # [bs,m]
+        #recording outputs
+        a_means: List[torch.Tensor] = []
 
         for y, noise_x, q in zip(ys, noises, qs):
-            # y handling
-            if y is None:
-                y = torch.full((bs,), np.double("nan"), device=device)
-            else:
-                y = self._expand_time_input(y, bs)
 
-            q = self._expand_time_input(q if q is not None else torch.zeros((1,), device=device), bs)
-            noise_x = self._expand_time_input(noise_x, bs)
-
-            if model_setting != "default":
-                raise ValueError("unknown model setting")
-
-            # q low-pass
-            if not self.args.disable_lpfs:
-                qlp = (1.0 - 1.0 / tauqlpf) * qlp + (1.0 / tauqlpf) * q
-            else:
-                qlp = q
-
-            # scaled q input: [bs,n]
-            if prescaled_w_inq is not None:
-                q_gain = (self.q_scale * qlp).unsqueeze(1)  # [bs,1]
-                scaled_q_in = prescaled_w_inq.unsqueeze(0) * q_gain  # [bs,n]
-            else:
-                scaled_q_in = 0.0
+            y, noise_x, q = self._prep_inputs(y, noise_x, q, bs=bs)
+            qlp = self._lowpass_filter(q, qlp, tauqlpf, enable = not self.args.disable_lpfs) 
+            scaled_q_in = self._compute_scaled_q_in(prescaled_w_inq, qlp)
 
             # x update
-            x = (
-                u * self.u_feedback_scale
-                + e
-            )
+            # x = (
+            #     u * self.u_feedback_scale
+            #     + elp
+            # )
+
+            x, x_state = self._update_x(x, u, elp, x_state)
 
             if self.args.enable_w_in_plasticity:
                 w_in_ = w_in.unsqueeze(0) + w_in_tuning*torch.sign(w_in.unsqueeze(0))  # [b,n]
@@ -674,7 +773,6 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 # bias_tuning = bias_tuning + (0.5+preact - biases_) * self.bias_lr 
                 bias_tuning = bias_tuning + (self.args.develop_b_tgt+preact - biases_) * self.bias_lr 
                 #the tuning will hold until the next timestep
-
             else:
                 biases_ = biases  # [bs,n]
 
@@ -701,48 +799,18 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
 
             # channel trial handling
             y_ = torch.where(mask, u + self.args.channel_trial_extra_error, y)
-            if not self.args.disable_lpfs:
-                ylp = (1.0 - 1.0 / tauylpf) * ylp + (1.0 / tauylpf) * y_
-            else:
-                ylp = y_
+            ylp = self._lowpass_filter(y_, ylp, tauylpf, enable = not self.args.disable_lpfs)
 
             # error
             e = ylp - u
-            if not self.args.disable_lpfs:
-                elp = (1.0 - 1.0 / tauelpf) * elp + (1.0 / tauelpf) * e
-            else:
-                elp = e
+            elp = self._lowpass_filter(e, elp, tauelpf, enable = not self.args.disable_lpfs)
 
-            # injection_opt == 2: leak perturbation into hidden
-            if self.args.injection_opt == 2:
-                if self.args.noise_injection_node == "x":
-                    raise ValueError("injection_opt2 incompatible with noise_injection_node 'x' yet")
-                x_prime = u * self.u_feedback_scale + e
-                h_prime = self.phi(
-                    biases_
-                    + (x_prime.unsqueeze(1) * w_in_)
-                    + scaled_q_in
-                )
-                inj_col = inj_.unsqueeze(1)  # [bs,1]
-                h_bar = (1.0 - inj_col) * h + inj_col * h_prime
-            elif self.args.injection_opt == 3:
-                if self.args.noise_injection_node == "x":
-                    raise ValueError("injection_opt3 incompatible with noise_injection_node 'x' yet")
-                x_prime = u * self.u_feedback_scale + e
-                inj_col = inj_
-                x_bar = (1.0 - inj_col) * x + inj_col * x_prime
-                h_bar = self.phi(
-                    biases_
-                    + (x_bar.unsqueeze(1) * w_in_)
-                    + scaled_q_in
-                )
-            else:
-                h_bar = h
+            h_bar = self._calculate_h_bar(h, biases_, 
+                                          x, w_in_, u, elp, 
+                                          scaled_q_in, inj_, 
+                                          mode=self.args.injection_opt, 
+                                          x_state=x_state)
             h_bar = h_bar.unsqueeze(2) if not self.mult_activation_mode else h_bar
-            #CHANGED: per-subpopulation weight update
-            # lr:   [bs,m] -> [bs,1,m]
-            # elp:  [bs]   -> [bs,1,1]
-            # hbar: [bs,n] -> [bs,n,1]
             
 
             if self.args.enable_weight_learning_exp:
@@ -756,21 +824,11 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 * elp_.unsqueeze(2)          #CHANGED
                 * h_bar                     #CHANGED
             )  #CHANGED: [bs,n,m]
-            # else:
-            #     # print(f'shapes before dw_out: lr {lr.shape}, elp {elp.shape}, h_bar {h_bar.shape}')
-            #     # if mult_activation_mode, h_bar is [bs,n,li], so we need to sum across the activation dimension to get a single update per synapse
-            #     dw_out = (
-            #         lr.unsqueeze(1)                          #CHANGED
-            #         * elp.unsqueeze(1).unsqueeze(2)          #CHANGED
-            #         * h_bar          #CHANGED: sum across activations, then unsqueeze for broadcasting
-            #     )  #CHANGED: [bs,n,m]
 
-            #CHANGED: norms per (batch, subpop) if ever needed for lr decay
             if self.args.apply_lr_decay:
                 norms = torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1))  #CHANGED: [bs,m]
 
-            # wd = 0.3* lr * n *torch.nn.functional.sigmoid(self.sp_weight_decay)  #CHANGED: [bs,m]  #CHANGED: scale by lr*n as in original code
-            # wd = 0.5*torch.nn.functional.sigmoid(self.sp_weight_decay)  #CHANGED: [bs,m]  #CHANGED: scale by lr*n as in original code
+
             if self.args.model_tie_lr_weight_decay:
                 decay = (lr * wd).unsqueeze(1)  #CHANGED: [bs,1,m]
             else:
@@ -786,16 +844,13 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             if self.args.enable_w_in_plasticity:
                 if self.mult_activation_mode:
                     raise ValueError("w_in plasticity not yet implemented for mult_activation_mode yet")
-                # print(f'w_in_tuning before: {w_in_tuning.shape}, elp: {elp.shape}, h_bar: {h_bar.shape}, w_in_lr: {self.w_in_lr.shape}, w_in_decay: {self.w_in_decay.shape}')
                 w_in_tuning = (1 - self.w_in_decay.unsqueeze(1)) * w_in_tuning  + self.w_in_lr.unsqueeze(1) * h_bar.squeeze(2)
-                #for backprop....torch.einsum("k,ki->i", elp, h_bar.squeeze(2) if self.mult_activation_mode else h_bar)  # [n]
-                # print(f'w_in_tuning after: {w_in_tuning[0,:20]}, w_in_: {w_in_[0,:20]}, h_bar: {h_bar[0,:20,:]}')#, elp: {elp[0,:20]}')
-            # lr update (disabled in your stated configuration: args.apply_lr_decay=False)
+
             if self.args.apply_lr_decay:
                 lr_mult = self.args.lr_min_mult + (lr_mult - self.args.lr_min_mult) * torch.exp(-(torch.exp(self.log_learning_rate_decay) * norms))  #CHANGED: elementwise [bs,m]
-                # lr_mult = torch.clamp(lr_mult, min=self.args.lr_min_mult)  #CHANGED: elementwise [bs,m]
                 lr = lr0 * lr_mult  #CHANGED
-
+            
+            # print(f"lr: {lr}, wd: {wd}, inj_: {inj_}, lr_mult: {lr_mult}, lr0: {lr0}, norms: {norms}")  # for debugging
             a_means.append(a_mean)
 
         return a_means
