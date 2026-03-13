@@ -50,11 +50,11 @@ def nans2none(arr):
             new_list.append(a)
     return new_list
 
-def force_model_params(model, forced_params):
-    for name, param in model.named_parameters():
-        if name in forced_params:
-            print(f'Forcing parameter {name} to value {forced_params[name]}')
-            param.data.fill_(forced_params[name])
+# def force_model_params(model, forced_params):
+#     for name, param in model.named_parameters():
+#         if name in forced_params:
+#             print(f'Forcing parameter {name} to value {forced_params[name]}')
+#             param.data.fill_(forced_params[name])
 
 def fwd_pass(model, ys, args, do_noise=False, qs=None):
     if not do_noise:
@@ -70,3 +70,35 @@ def fwd_pass(model, ys, args, do_noise=False, qs=None):
                             )
     outputs = torch.stack(outputs_)
     return outputs.mean(axis=1)
+
+def force_model_params(model, forced_params):
+    for name, param in model.named_parameters():
+        if name not in forced_params:
+            continue
+
+        value = forced_params[name]
+        print(f"Forcing parameter {name} to value {value}")
+
+        with torch.no_grad():
+            value = torch.as_tensor(value, dtype=param.dtype, device=param.device)
+
+            # Scalar case
+            if value.ndim == 0:
+                param.fill_(value.item())
+                continue
+
+            # Exact shape match
+            if value.shape == param.shape:
+                param.copy_(value)
+                continue
+
+            # Allow broadcastable shapes but check explicitly
+            try:
+                broadcasted = value.expand(param.shape)
+            except RuntimeError:
+                raise ValueError(
+                    f"Shape mismatch when forcing '{name}': "
+                    f"parameter shape {tuple(param.shape)} vs value shape {tuple(value.shape)}"
+                )
+
+            param.copy_(broadcasted)
