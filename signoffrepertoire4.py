@@ -17,8 +17,12 @@ TsA=120
 TsB=20
 TsC=20
 
+TfN1 = 136
+TfA = 240
+TfN2 = 96
+aug_frog_const = 2.0
 
-TaN=150
+TaN=160
 TaB=120
 playlist = {}
 playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchannel, TsC)],
@@ -40,7 +44,24 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
             (Pchannel, 146)],
 'visw1p2': [(P0, 250),(Pplus,300), (Pchannel, 600)],            
 'visw1p1': [(Pplus,300), (Pchannel, 600)],            
-'visw1p3': [(0.5*Pminus, 250),(Pplus,300), (Pchannel, 600)],            
+'visw1p3': [(0.5*Pminus, 250),(Pplus,300), (Pchannel, 600)], 
+'frogs': [(P0,TfN1),((P0,Pplus),TfA),(P0,TfN2)],
+'anti_frogs': [(P0,TfN1),(Pplus,TfA),(P0,TfN2)],
+
+'frogs_aug': [(P0,TfN1),((P0,Pplus*aug_frog_const),TfA),(P0,TfN2)],
+'anti_frogs_aug': [(P0,TfN1),(Pplus*aug_frog_const,TfA),(P0,TfN2)],
+
+'frogs_long': [(P0,TfN1),((P0,Pplus),2*TfA),(P0,TfN2)],
+'anti_frogs_long': [(P0,TfN1),(Pplus,2*TfA),(P0,TfN2)],
+
+'overlearning_baseline': [(P0, 100), (Pplus, 200), (Pminus, 15), (Pchannel, 150)],
+'overlearning': [(P0, 100), (Pplus, 600), (Pminus, 15), (Pchannel, 150)],
+
+'pretrained_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 364)],
+'pretrained_sr': [(P0, 192), (Pminus, 384), (Pplus, 384),  (Pminus, 20), (Pchannel, 364)],
+
+'pretrained_sr_baseline0p5': [(P0, 192), (Pplus, 384//2), (Pminus, 20), (Pchannel, 364)],
+'pretrained_sr0p5': [(P0, 192), (Pminus, 384//2), (Pplus, 384//2),  (Pminus, 20), (Pchannel, 364)],
 })
 
 

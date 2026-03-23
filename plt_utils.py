@@ -32,3 +32,27 @@ def plot_segments(result , colors = ['tab:red', 'tab:orange', 'tab:pink'],
     y_data = np.array(y_data)
     x_data = np.arange(len(y_data)) + x0
     plt.plot(x_data, y_data+visu_offsets[i],colors[i],**plot_opts)
+
+def parse_herzfeld_data(ooo, n_blocks=25, pooling_fun=np.mean):
+  '''a function tailored for working with 'part2' edition of the model/results/etc.'''
+  deltas_by_super_scenario = {}
+  for i, this_data in enumerate([ooo]):
+
+      for iz, z in enumerate(ooo.keys()):
+          if 'herzfeld' not in z:
+              continue
+          else:
+              scenario = z
+              super_scenario = z.split('$')[0]
+          deltas = []
+          this_result = pooling_fun(this_data[scenario],axis=1)
+          pointer = 0
+          for bb in range(n_blocks):
+              block_length = len(this_result)//n_blocks
+              deltas.append(this_result[pointer+2]-this_result[pointer])
+              pointer += block_length
+
+          if super_scenario not in deltas_by_super_scenario:
+              deltas_by_super_scenario[super_scenario] = []
+          deltas_by_super_scenario[super_scenario].append(deltas)
+  return deltas_by_super_scenario

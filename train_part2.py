@@ -15,7 +15,14 @@ from utils_part2 import load_data_to_batch
 
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWinj0/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryInjTuned/'
-result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover1em3_noLRmin/'
+result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover1em3_noLRminUopt/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRminInjOpt0/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRminInjOpt3Trained/'
+
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_g1_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRmin/'
+
+
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/lerner_LRmin_basicBwdCapatRMSprop_NEW/'
 
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_LRflr1em1/'
@@ -53,7 +60,7 @@ result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_pa
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_rich_scsp_x8_v2_Ufb/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_rich_scsp_x8_v2_Ufb_injopt2/'
 
-os.makedirs(result_dir, exist_ok=True)
+os.makedirs(result_dir, exist_ok=False)
 # -----------------------
 # 1) Setup (match your routine)
 # -----------------------
@@ -80,7 +87,7 @@ n_subjects_LUT = {
 n_seeds_baseline_LUT = { #this can be modified according to the model of interest
     'ERSR': 128//2,
     'MU': 32,
-    'Lerner1': 128,
+    'Lerner1': 128//2,
     'Lerner2': 128,
     'Lerner3': 128,
     'Lerner4': 128,
@@ -136,12 +143,12 @@ if template == 'lr_reduct':
         bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
         zzz_legacy_init=False,
         enable_output_scale_tuning= True, #False,# mode == 'MU',
-        enable_u_feedback_scale_tuning=False, #True,
+        enable_u_feedback_scale_tuning=True, #True,
         enable_direct_injection= False , #mode == 'MU',
-        injection_opt=3,            # you’re using opt=2 in the model code
+        injection_opt=3,           
         skip_gain=0.0,
         channel_trial_extra_error=0.0,
-        lr_min_mult = 1e-3,
+        lr_min_mult = 0, #1e-3,
         weight_decay_mode='softplus', #'sigmoid', #
         # weight_decay_mode='sigmoid',
         nl_activation='relu',
@@ -150,7 +157,7 @@ if template == 'lr_reduct':
         optimizer_alg='RMSprop',
         n_seeds=n_seeds,
         fudge=1e-30,
-        lr_recovery_rate = 0.01,
+        lr_recovery_rate = 0.005,
         lr_update_mode = "recoverable",
         # lr_update_mode = "basic",
         # direct_inj_limiter=0.45,
