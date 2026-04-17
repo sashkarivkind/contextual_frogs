@@ -46,7 +46,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "debug_flag_win2nd_column_positive_only": False, 
             "apply_scaled_soft_plus_on_w_in_params": False,
             "lr_update_mode": "basic",
-            "lr_recovery_rate": 0.0,  # only used if lr_update_mode is "recoverable"
+            "lr_recovery_rate": 0.0, 
+            "lr_update_qty": "dw_out_norm" ,
                     }
 
         self.device = device
@@ -492,7 +493,19 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         else:
             raise ValueError(f"Unknown x_update_mode {self.args.x_update_mode}")
 
-    def _lr_update(self, lr_mult, norms, lr0):
+    def _lr_update(self, lr_mult, lr0, weight_info=None):
+
+        if self.args.lr_update_qty == "dw_out_norm":
+            weights_to_consider = weight_info['dw_out']
+        elif self.args.lr_update_qty == "dw_out1_norm":
+            weights_to_consider = weight_info['dw_out1']
+        elif self.args.lr_update_qty == "wout_norm":
+            weights_to_consider = weight_info['w_out']
+        else:
+            raise ValueError(f"Unknown lr_update_qty {self.args.lr_update_qty}")
+        norms = torch.sqrt(self.fudge + torch.sum(weights_to_consider ** 2, dim=1))
+
+
         if self.args.lr_update_mode == "basic":
             nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
             lr_mult = self.args.lr_min_mult + (lr_mult - self.args.lr_min_mult) * \
@@ -627,7 +640,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         else:
             w_out_ = w_out
 
-        return dw_out - decay * w_out_
+        return dw_out, - decay * w_out_
 
     def _compute_steady_state_w_in_tuning(self, biases):
         if self._separate_win_mode():
@@ -744,18 +757,20 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 x_state=x_state,
             )
 
-            dw_out = self._compute_dw_out(lr, elp, h_bar, w_out, wd)
+            dw_out1, dw_out2 = self._compute_dw_out(lr, elp, h_bar, w_out, wd)
 
-            if self.args.apply_lr_decay:
-                norms = torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1))
+            dw_out = dw_out1 + dw_out2
 
-            w_out = w_out + dw_out
+            # if self.args.apply_lr_decay:
+                #norms = torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1))     
+
+            w_out = w_out + dw_out 
 
             if self.args.enable_w_in_plasticity:
                 w_in_tuning = self._w_in_update(w_in_tuning, h_bar)
 
             if self.args.apply_lr_decay:
-                lr_mult, lr = self._lr_update(lr_mult, norms, lr0)
+                lr_mult, lr = self._lr_update(lr_mult, lr0, weight_info={'w_out': w_out, 'dw_out': dw_out, 'dw_out1': dw_out1, 'dw_out2': dw_out2})
 
             a_means.append(a_mean)
 

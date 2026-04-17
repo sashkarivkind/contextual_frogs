@@ -9,6 +9,26 @@ from models_part2 import BatchedElboGenerativeModelTopMulti
 import os
 from optimise_clnn import load_subject_data
 from utils_part2 import load_data_to_batch
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument('--result_root', type=str, default='/homes/ar2342/one_more_dir/contextual_frogs/results_part2/')
+parser.add_argument('--run_name', type=str, default='temp_run')
+parser.add_argument('--superseed', type=int, default=0, help='superseed to determine the random seed for model initialization')
+parser.add_argument('--n_epochs', type=int, default=1500, help='number of training epochs')
+
+superargs = parser.parse_args()
+result_dir = os.path.join(superargs.result_root, superargs.run_name) + '/'
+
+#inittialise numpy and torch random seeds using the superseed
+superseed = superargs.superseed
+np.random.seed(superseed)
+torch.manual_seed(superseed)
+
+n_epochs = superargs.n_epochs
+
+
+
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMU5opt3/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_tryMulti104trySchV2_m2u/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop/'
@@ -16,7 +36,13 @@ from utils_part2 import load_data_to_batch
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWinj0/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryInjTuned/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover1em3_noLRmin/'
-result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover1em3_noLRminUopt/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRminUopt/'
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRminWout/'
+
+
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/MU_NEWveryFudgeDisabled_LRrecover5em3_noLRminWout/'
+
+# result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRminDwout1/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRminInjOpt0/'
 # result_dir = '/homes/ar2342/one_more_dir/contextual_frogs/results_part2/hello_part2_LRmin_basicBwdCapatRMSprop_NEWveryFudgeDisabled_LRrecover5em3_noLRminInjOpt3Trained/'
 
@@ -98,7 +124,6 @@ n_seeds_baseline_LUT = { #this can be modified according to the model of interes
 n_subjects = n_subjects_LUT[mode]   
 n_seeds = n_seeds_baseline_LUT[mode] * model_specific_seed_factor #72  
 # n_subjects = 16 if mode == 'ERSR' else 24
-n_epochs = 1500
 template ='lr_reduct' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
 lr = 1e-2# 3e-3 #1e-2
 class Scheduler:
@@ -143,7 +168,7 @@ if template == 'lr_reduct':
         bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
         zzz_legacy_init=False,
         enable_output_scale_tuning= True, #False,# mode == 'MU',
-        enable_u_feedback_scale_tuning=True, #True,
+        enable_u_feedback_scale_tuning=False, #True,
         enable_direct_injection= False , #mode == 'MU',
         injection_opt=3,           
         skip_gain=0.0,
@@ -159,6 +184,7 @@ if template == 'lr_reduct':
         fudge=1e-30,
         lr_recovery_rate = 0.005,
         lr_update_mode = "recoverable",
+        # lr_update_qty = "wout_norm"
         # lr_update_mode = "basic",
         # direct_inj_limiter=0.45,
     )
