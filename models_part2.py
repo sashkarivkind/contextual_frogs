@@ -48,6 +48,9 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "lr_update_mode": "basic",
             "lr_recovery_rate": 0.0, 
             "lr_update_qty": "dw_out_norm" ,
+            "enable_output_scale_tuning": False,
+            "enable_input_scale_tuning": False,
+
                     }
 
         self.device = device
@@ -128,6 +131,12 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             else torch.full((self.bs,), 1.0, device=device)
         )
 
+        init_input_scale = (
+            randu((self.bs,), 0.8, 1.0)
+            if not args.zzz_legacy_init
+            else torch.full((self.bs,), 1.0, device=device)
+        )
+
         if args.model_tie_lr_weight_decay:
             init_sp_weight_decay = (
                 randu((self.bs, self.m), -5.0, 5.0)
@@ -181,6 +190,11 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             self.output_scale = nn.Parameter(init_output_scale)
         else:
             self.output_scale = torch.ones(self.bs, device=device, requires_grad=False)
+
+        if args.enable_input_scale_tuning:
+            self.input_scale = nn.Parameter(init_input_scale)
+        else:
+            self.input_scale = torch.ones(self.bs, device=device, requires_grad=False)
 
         if args.enable_u_feedback_scale_tuning:
             self.u_feedback_scale = nn.Parameter(torch.ones(self.bs, device=device))
@@ -673,6 +687,10 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         ys: List[Optional[torch.Tensor]],
         model_setting: str,
         qs: Optional[List[Optional[torch.Tensor]]] = None,
+        record_internals: bool = False,
+        record_vectors: bool = False,
+        record_inoutmaps: bool = False,
+        inoutmaps_probing_vec: Optional[torch.Tensor] = None,
     ) -> List[torch.Tensor]:
 
         assert len(noises) == len(ys), "noises and ys must have same length"
@@ -717,8 +735,37 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
 
         a_means: List[torch.Tensor] = []
 
+        if record_internals:
+            self.internals = {
+                "u": [],
+                "e": [],
+                "qlp": [],
+                "ylp": [],
+                "elp": [],
+                "lr": [],
+                "wd": [],
+                "x": [],
+            }
+        if record_vectors:
+            raise NotImplementedError("record_vectors not yet implemented for this model class")
+            # self.vectors = {
+            #     "w_out": [],
+            #     "h": [],
+            #     "biases_": [],
+            #     "x": [],
+            #     "w_in_": [],
+            #     "scaled_q_in": [],
+            #     }
+        if record_inoutmaps:
+            self.inoutmaps = []
+            if inoutmaps_probing_vec is None:
+                raise ValueError("inoutmaps_probing_vec must be provided if record_inoutmaps is True")
+
+
         for y, noise_x, q in zip(ys, noises, qs):
             y, noise_x, q = self._prep_inputs(y, noise_x, q, bs=bs)
+
+            y = self.input_scale * y 
 
             qlp = self._lowpass_filter(q, qlp, tauqlpf, enable=not self.args.disable_lpfs)
             scaled_q_in = self._compute_scaled_q_in(prescaled_w_inq, qlp)
@@ -737,6 +784,10 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             u = self._compute_u(w_out, h, x)
 
             a_mean = self.output_scale * u
+
+            if record_inoutmaps:
+                inoutmap_out = self._compute_hidden(biases_, inoutmaps_probing_vec, w_in_, scaled_q_in)
+                self.inoutmaps.append((inoutmap_out, inoutmaps_probing_vec))
 
             y_ = torch.where(mask, u + self.args.channel_trial_extra_error, y)
             ylp = self._lowpass_filter(y_, ylp, tauylpf, enable=not self.args.disable_lpfs)
@@ -773,5 +824,20 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 lr_mult, lr = self._lr_update(lr_mult, lr0, weight_info={'w_out': w_out, 'dw_out': dw_out, 'dw_out1': dw_out1, 'dw_out2': dw_out2})
 
             a_means.append(a_mean)
+
+            if record_internals:
+                self.internals["u"].append(u)
+                self.internals["e"].append(e)
+                self.internals["qlp"].append(qlp)
+                self.internals["ylp"].append(ylp)
+                self.internals["elp"].append(elp)
+                self.internals["lr"].append(lr)
+                self.internals["wd"].append(wd)
+                self.internals["x"].append(x)
+
+        if record_internals:
+            for k in self.internals:
+                self.internals[k] = torch.stack(self.internals[k], dim=0)
+            return a_means, self.internals
 
         return a_means

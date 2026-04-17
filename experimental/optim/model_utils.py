@@ -3,6 +3,8 @@ from xml.parsers.expat import model
 import torch
 import numpy as np
 from collections.abc import Mapping
+from collections import OrderedDict
+from typing import MutableMapping
 
 def eval_ys(model, ys, args, manual_noises=None, qs=None):
     model.eval()
@@ -102,3 +104,109 @@ def force_model_params(model, forced_params):
                 )
 
             param.copy_(broadcasted)
+
+@torch.no_grad()
+def migrate_output_scale_to_input_scale_state_dict(
+    state_dict: MutableMapping[str, torch.Tensor],
+    *,
+    inplace: bool = False,
+    prefix: str = "",
+    remove_output_scale: bool = True,
+) -> MutableMapping[str, torch.Tensor]:
+    """
+    Remap an old checkpoint/state_dict from:
+
+        a_mean = output_scale * u
+
+    to:
+
+        y_input = input_scale * y
+        a_mean = u
+
+    while preserving the full ReLU dynamics under:
+      - enable_w_in_plasticity = False
+      - enable_bias_update = False
+      - nl_activation = "relu"
+      - usual learning exponent = 1
+
+    Required old keys:
+      - output_scale
+      - sigma_b
+      - log_learning_rate
+
+    Optional old keys:
+      - q_scale
+
+    Adds/replaces:
+      - input_scale
+
+    Sets:
+      - output_scale = 1
+
+    Use `prefix="module."` for DataParallel/DDP-style checkpoints.
+    """
+
+    if inplace:
+        sd = state_dict
+    else:
+        sd = OrderedDict(
+            (k, v.clone() if torch.is_tensor(v) else v)
+            for k, v in state_dict.items()
+        )
+
+    output_scale_key = prefix + "output_scale"
+    input_scale_key = prefix + "input_scale"
+    sigma_b_key = prefix + "sigma_b"
+    q_scale_key = prefix + "q_scale"
+    log_lr_key = prefix + "log_learning_rate"
+
+    required = [output_scale_key, sigma_b_key, log_lr_key]
+    missing = [k for k in required if k not in sd]
+    if missing:
+        raise KeyError(f"Missing required state_dict keys: {missing}")
+
+    c = sd[output_scale_key].detach().clone()
+
+    if torch.any(c <= 0):
+        raise ValueError(
+            "Exact ReLU remap requires strictly positive output_scale values."
+        )
+
+    if c.ndim != 1:
+        raise ValueError(
+            f"Expected output_scale to have shape [bs], got {tuple(c.shape)}"
+        )
+
+    bs = c.shape[0]
+
+    if sd[sigma_b_key].shape[0] != bs:
+        raise ValueError(
+            f"{sigma_b_key} batch dimension does not match output_scale."
+        )
+
+    if sd[log_lr_key].shape[0] != bs:
+        raise ValueError(
+            f"{log_lr_key} batch dimension does not match output_scale."
+        )
+
+    # New input-side scale.
+    sd[input_scale_key] = c.clone()
+
+    # Disable output-side scale.
+    if remove_output_scale:
+        del sd[output_scale_key]
+    else:
+        sd[output_scale_key] = torch.ones_like(c)
+
+    # Scale hidden preactivation bias term.
+    sd[sigma_b_key] = sd[sigma_b_key] * c
+
+    # Scale q input term if present.
+    if q_scale_key in sd:
+        sd[q_scale_key] = sd[q_scale_key] * c
+
+    # Preserve plastic learning dynamics:
+    # lr_new = lr_old / c**2
+    sd[log_lr_key] = sd[log_lr_key] - 2.0 * torch.log(c)[:, None]
+
+    return sd
