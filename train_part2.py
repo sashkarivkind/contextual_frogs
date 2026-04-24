@@ -168,6 +168,9 @@ if template == 'lr_reduct':
         bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
         zzz_legacy_init=False,
         enable_output_scale_tuning= True, #False,# mode == 'MU',
+        enable_input_scale_tuning= False, #False,# mode == 'MU',
+        softclamp_output_scale_0to1= True, #False,# mode == 'MU',
+        softclamp_input_scale_0to1= False, #False,# mode == 'MU',
         enable_u_feedback_scale_tuning=False, #True,
         enable_direct_injection= False , #mode == 'MU',
         injection_opt=3,           
@@ -184,6 +187,8 @@ if template == 'lr_reduct':
         fudge=1e-30,
         lr_recovery_rate = 0.005,
         lr_update_mode = "recoverable",
+        inj_transform = "identity",
+        fixed_injection_param = 0.4,
         # lr_update_qty = "wout_norm"
         # lr_update_mode = "basic",
         # direct_inj_limiter=0.45,
@@ -224,9 +229,7 @@ elif template == 'multirate':
         enable_weight_learning_exp = False,
         enable_separate_win_per_rate = True,
         x_update_mode='vanilla'#,'consolidate_to_slow',# 'two_lpfs',#,#
-
-
-        # direct_inj_limiter=0.45,
+       # direct_inj_limiter=0.45,
     )
 elif template == 'state-space':
     args = SimpleNamespace(
@@ -445,7 +448,7 @@ for epoch in range(n_epochs):
             ys_tb_ = ys_tb
 
         a_pred_tb = forward_tb(model, ys_tb_, args, do_noise=False, qs_tb=qs_tb)  # [T,B]
-
+        # print(a_pred_tb)
         a_pred_tb = a_pred_tb + output_noise_scheduler.get_noise(*a_pred_tb.shape, device=device) if substep=='train' else a_pred_tb
 
         mask = ~torch.isnan(a_exp_tb)                           # [T,B] bool

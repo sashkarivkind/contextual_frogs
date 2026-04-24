@@ -50,7 +50,10 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "lr_update_qty": "dw_out_norm" ,
             "enable_output_scale_tuning": False,
             "enable_input_scale_tuning": False,
-
+            "inj_transform": "sigmoid",  # options: "sigmoid", "identity"
+            "fixed_injection_param": 0.0,
+            "softclamp_input_scale_0to1": False,
+            "softclamp_output_scale_0to1": False,
                     }
 
         self.device = device
@@ -63,6 +66,11 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         if args.disable_lpfs:
             assert not (args.enable_qlpf or args.enable_ylpf or args.enable_elpf), \
                 "Cannot enable LPFs if disable_lpfs is set"
+
+        if args.enable_output_scale_tuning and args.enable_input_scale_tuning:
+            raise ValueError(
+                "Both output scale tuning and input scale tuning cannot be enabled at the same time, for now."
+            )
 
         if batch_size is None:
             if not hasattr(args, "bs"):
@@ -126,7 +134,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             else torch.full((self.bs,), 0.1, device=device)
         )
         init_output_scale = (
-            randu((self.bs,), 0.8, 1.0)
+            (randu((self.bs,), 0.8, 1.0) if not args.softclamp_output_scale_0to1 else randu((self.bs,), 3.5, 6.5))
             if not args.zzz_legacy_init
             else torch.full((self.bs,), 1.0, device=device)
         )
@@ -193,6 +201,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
 
         if args.enable_input_scale_tuning:
             self.input_scale = nn.Parameter(init_input_scale)
+            # print("input scale tuning enabled, initial values:", self.input_scale.data)
+            # self.input_scale = torch.ones(self.bs, device=device, requires_grad=False)
         else:
             self.input_scale = torch.ones(self.bs, device=device, requires_grad=False)
 
@@ -266,7 +276,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         self.direct_injection_scale = (
             nn.Parameter(randu((self.bs,), 0.05, 0.4))
             if args.enable_direct_injection
-            else torch.zeros(self.bs, device=device, requires_grad=False)
+            else args.fixed_injection_param * torch.ones(self.bs, device=device, requires_grad=False)
         )
 
         # random features
@@ -324,6 +334,19 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
     @staticmethod
     def softplus(x: torch.Tensor) -> torch.Tensor:
         return torch.log1p(torch.exp(x))
+
+    @staticmethod
+    def softclamp(
+        x: torch.Tensor,
+        min_val: float = 0.0,
+        max_val: float = 1.0,
+    ) -> torch.Tensor:
+        if max_val <= min_val:
+            raise ValueError(f"Expected max_val > min_val, got {max_val} <= {min_val}")
+        lower = x - float(min_val)
+        upper = x - float(max_val)
+        # Smoothly approximates a hard clamp while staying close to identity in-range.
+        return float(min_val) + F.softplus(lower) - F.softplus(upper)
 
     # ---------------------------
     # feature / parameter init helpers
@@ -456,7 +479,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         lr = lr0 * lr_mult
         return lr, lr0, lr_mult
 
-    def _prep_inputs(self, y, noise_x, q, bs):
+    def _prep_inputs(self, y, internal_noise, q, bs):
         if y is None:
             y = torch.full((bs,), np.double("nan"), device=self.device)
         else:
@@ -465,8 +488,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         q = self._expand_time_input(
             q if q is not None else torch.zeros((1,), device=self.device), bs
         )
-        noise_x = self._expand_time_input(noise_x, bs)
-        return y, noise_x, q
+        internal_noise = self._expand_time_input(internal_noise, bs)
+        return y, internal_noise, q
 
     def _lowpass_filter(self, new_value, prev_lp, tau, enable):
         if enable:
@@ -731,7 +754,15 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         tauylpf = 1.0 + self.softplus(self.tauylpf_m1)
         tauelpf = 1.0 + self.softplus(self.tauelpf_m1)
 
-        inj_ = torch.sigmoid(self.direct_injection_scale) * self.args.direct_inj_limiter
+
+        if self.args.inj_transform == "sigmoid":
+            injlim = torch.sigmoid
+        elif self.args.inj_transform == "identity":
+            injlim = lambda x: x
+        else:
+            raise ValueError(f"Unknown inj_transform {self.args.inj_transform}")
+
+        inj_ = injlim(self.direct_injection_scale) * self.args.direct_inj_limiter
 
         a_means: List[torch.Tensor] = []
 
@@ -743,7 +774,6 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 "ylp": [],
                 "elp": [],
                 "lr": [],
-                "wd": [],
                 "x": [],
             }
         if record_vectors:
@@ -761,12 +791,22 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             if inoutmaps_probing_vec is None:
                 raise ValueError("inoutmaps_probing_vec must be provided if record_inoutmaps is True")
 
+        if self.args.softclamp_input_scale_0to1:
+            input_scale_ = self.softclamp(self.input_scale, min_val=0.0, max_val=1.0)
+        else:
+            input_scale_ = self.input_scale
 
-        for y, noise_x, q in zip(ys, noises, qs):
-            y, noise_x, q = self._prep_inputs(y, noise_x, q, bs=bs)
+        if self.args.softclamp_output_scale_0to1:
+            output_scale_ = self.softclamp(self.output_scale, min_val=0.0, max_val=1.0)
+        else:
+            output_scale_ = self.output_scale
+            
+        for y, internal_noise, q in zip(ys, noises, qs):
+            y, internal_noise, q = self._prep_inputs(y, internal_noise, q, bs=bs)
 
-            y = self.input_scale * y 
-
+            # y = input_scale_ * y
+            y = torch.multiply(input_scale_, y)
+            # print(f"input_scale: {input_scale_.data}, y after scaling: {y}")
             qlp = self._lowpass_filter(q, qlp, tauqlpf, enable=not self.args.disable_lpfs)
             scaled_q_in = self._compute_scaled_q_in(prescaled_w_inq, qlp)
 
@@ -780,14 +820,17 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             if self.args.injection_opt == 1:
                 raise ValueError("injection_opt 1 is deprecated, use injection_opt 2 instead")
 
+            x = x + internal_noise * self.sigma_x
+
             h = self._compute_hidden(biases_, x, w_in_, scaled_q_in)
             u = self._compute_u(w_out, h, x)
 
-            a_mean = self.output_scale * u
+            a_mean = output_scale_ * u
 
             if record_inoutmaps:
-                inoutmap_out = self._compute_hidden(biases_, inoutmaps_probing_vec, w_in_, scaled_q_in)
-                self.inoutmaps.append((inoutmap_out, inoutmaps_probing_vec))
+                inoutmap_h = self._compute_hidden(biases_, inoutmaps_probing_vec, w_in_, scaled_q_in)
+                inoutmap_u = self._compute_u(w_out, inoutmap_h, inoutmaps_probing_vec)
+                self.inoutmaps.append((inoutmap_u, inoutmaps_probing_vec))
 
             y_ = torch.where(mask, u + self.args.channel_trial_extra_error, y)
             ylp = self._lowpass_filter(y_, ylp, tauylpf, enable=not self.args.disable_lpfs)
@@ -832,12 +875,14 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 self.internals["ylp"].append(ylp)
                 self.internals["elp"].append(elp)
                 self.internals["lr"].append(lr)
-                self.internals["wd"].append(wd)
                 self.internals["x"].append(x)
 
         if record_internals:
             for k in self.internals:
                 self.internals[k] = torch.stack(self.internals[k], dim=0)
             return a_means, self.internals
+
+        if record_inoutmaps:
+            return a_means, self.inoutmaps
 
         return a_means

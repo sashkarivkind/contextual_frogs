@@ -112,6 +112,8 @@ def migrate_output_scale_to_input_scale_state_dict(
     inplace: bool = False,
     prefix: str = "",
     remove_output_scale: bool = True,
+    apply_softclamp_output_scale_0to1: bool = False,
+    model_for_softclamp: torch.nn.Module = None,
 ) -> MutableMapping[str, torch.Tensor]:
     """
     Remap an old checkpoint/state_dict from:
@@ -166,6 +168,12 @@ def migrate_output_scale_to_input_scale_state_dict(
         raise KeyError(f"Missing required state_dict keys: {missing}")
 
     c = sd[output_scale_key].detach().clone()
+    #check if softclamping was applied to output scale, and if so, compute the post-softclamp value of c and use
+    #that for the rest of the remapping
+    if apply_softclamp_output_scale_0to1:
+        if model_for_softclamp is None:
+            raise ValueError("model_for_softclamp must be provided when apply_softclamp_output_scale_0to1 is True")
+        c = model_for_softclamp.softclamp(c)
 
     if torch.any(c <= 0):
         raise ValueError(
