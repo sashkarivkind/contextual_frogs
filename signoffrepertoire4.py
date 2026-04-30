@@ -60,8 +60,10 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
 'pretrained_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 364)],
 'pretrained_sr': [(P0, 192), (Pminus, 384), (Pplus, 384),  (Pminus, 20), (Pchannel, 364)],
 
-'wm_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 364)],
-'wm_sr_manipulation': [(P0, 192), (Pplus, 384), (Pminus, 19), (P0, 1), (Pchannel, 364)],
+'wm_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 192)],
+'wm_sr_manipulation': [(P0, 192), (Pplus, 384), (Pminus, 19), (P0, 1), (Pchannel, 192)],
+'wmE2_sr_baseline': [(P0, 192), (Pminus, 20), (Pchannel, 150)],
+'wmE3_sr_baseline': [(P0, 192), (Pplus, 384), (Pchannel, 192)],
 
 'pretrained_sr_baseline0p5': [(P0, 192), (Pplus, 384//2), (Pminus, 20), (Pchannel, 364)],
 'pretrained_sr0p5': [(P0, 192), (Pminus, 384//2), (Pplus, 384//2),  (Pminus, 20), (Pchannel, 364)],

@@ -92,11 +92,11 @@ os.makedirs(result_dir, exist_ok=False)
 # -----------------------
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # mode =  'Lerner1' #'ERSR' #'MU' 
-mode =  'ERSR' #'MU' 
+mode =  'ERSR' #'MU' #'MU' 
 model_specific_seed_factor = 1
 # paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
 
-priority_factor = 1 #10
+priority_factor = 1 # 100 #10
 # priority_up_to = 205
 priority_intervals = [(None, 300), (1900, None)] # example: prioritize early and late time points
 
@@ -124,7 +124,7 @@ n_seeds_baseline_LUT = { #this can be modified according to the model of interes
 n_subjects = n_subjects_LUT[mode]   
 n_seeds = n_seeds_baseline_LUT[mode] * model_specific_seed_factor #72  
 # n_subjects = 16 if mode == 'ERSR' else 24
-template ='lr_reduct' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+template ='lr_reduct2' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
 lr = 1e-2# 3e-3 #1e-2
 class Scheduler:
     '''
@@ -171,7 +171,7 @@ if template == 'lr_reduct':
         enable_input_scale_tuning= False, #False,# mode == 'MU',
         softclamp_output_scale_0to1= True, #False,# mode == 'MU',
         softclamp_input_scale_0to1= False, #False,# mode == 'MU',
-        enable_u_feedback_scale_tuning=False, #True,
+        enable_u_feedback_scale_tuning=True, #True,
         enable_direct_injection= False , #mode == 'MU',
         injection_opt=3,           
         skip_gain=0.0,
@@ -190,6 +190,47 @@ if template == 'lr_reduct':
         inj_transform = "identity",
         fixed_injection_param = 0.4,
         # lr_update_qty = "wout_norm"
+        # lr_update_mode = "basic",
+        # direct_inj_limiter=0.45,
+    )
+if template == 'lr_reduct2':
+        args = SimpleNamespace(
+        model='default',
+        enable_q_scale_tuning= mode == 'MU',
+        assume_opt_output_noise=True,
+        enable_qlpf=False,
+        enable_ylpf=False,
+        enable_elpf=False,
+        multirate_m=1,          # 
+        apply_lr_decay=True, #False,
+        noise_injection_node='a',
+        model_tie_lr_weight_decay=False,
+        bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
+        zzz_legacy_init=False,
+        enable_output_scale_tuning= True, #False,# mode == 'MU',
+        enable_input_scale_tuning= False, #False,# mode == 'MU',
+        softclamp_output_scale_0to1= True, #False,# mode == 'MU',
+        softclamp_input_scale_0to1= False, #False,# mode == 'MU',
+        enable_u_feedback_scale_tuning=False, #True,
+        enable_direct_injection= mode == 'MU',
+        injection_opt=2,           
+        skip_gain=0.0,
+        channel_trial_extra_error=0.0,
+        lr_min_mult = 0, #1e-3,
+        weight_decay_mode='softplus', #'sigmoid', #
+        # weight_decay_mode='sigmoid',
+        nl_activation='relu',
+        n=128*8 if mode == 'ERSR' else 256,
+        disable_lpfs=True,
+        optimizer_alg='RMSprop',
+        n_seeds=n_seeds,
+        fudge=1e-30,
+        lr_recovery_rate = 0.04,
+        lr_update_mode = "recoverable",
+        inj_transform = "identity",
+        fixed_injection_param = 0.4,
+        lr_update_qty = "wout_norm",
+        # fixed_u_feedback_scale = 0.8,
         # lr_update_mode = "basic",
         # direct_inj_limiter=0.45,
     )
@@ -414,7 +455,6 @@ model = BatchedElboGenerativeModelTopMulti(device=device,
                                            args=args, 
                                            batch_size=args.bs,
                                            **(dict(fudge=args.fudge) if hasattr(args, 'fudge') else {})).to(device)
-
 #optimiser is scheduled to reduce lr by sqrt10 every 1000 epochs
 if args.optimizer_alg == 'Adam':
     Opti = torch.optim.Adam

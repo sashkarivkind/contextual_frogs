@@ -54,6 +54,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "fixed_injection_param": 0.0,
             "softclamp_input_scale_0to1": False,
             "softclamp_output_scale_0to1": False,
+            "fixed_u_feedback_scale": 1.0,
                     }
 
         self.device = device
@@ -209,7 +210,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         if args.enable_u_feedback_scale_tuning:
             self.u_feedback_scale = nn.Parameter(torch.ones(self.bs, device=device))
         else:
-            self.u_feedback_scale = torch.ones(self.bs, device=device, requires_grad=False)
+            self.u_feedback_scale = args.fixed_u_feedback_scale * torch.ones(self.bs, device=device, requires_grad=False)
 
         self.sp_weight_decay = nn.Parameter(init_sp_weight_decay)
 
