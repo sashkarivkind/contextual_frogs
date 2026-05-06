@@ -91,8 +91,8 @@ os.makedirs(result_dir, exist_ok=False)
 # 1) Setup (match your routine)
 # -----------------------
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# mode =  'Lerner1' #'ERSR' #'MU' 
-mode =  'ERSR' #'MU' #'MU' 
+mode =  'Lerner1' #'ERSR' #'MU' 
+# mode =  'ERSR' #'MU' #'MU' 
 model_specific_seed_factor = 1
 # paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
 
@@ -213,7 +213,7 @@ if template == 'lr_reduct2':
         softclamp_input_scale_0to1= False, #False,# mode == 'MU',
         enable_u_feedback_scale_tuning=False, #True,
         enable_direct_injection= mode == 'MU',
-        injection_opt=2,           
+        injection_opt=3,           
         skip_gain=0.0,
         channel_trial_extra_error=0.0,
         lr_min_mult = 0, #1e-3,
@@ -230,6 +230,8 @@ if template == 'lr_reduct2':
         inj_transform = "identity",
         fixed_injection_param = 0.4,
         lr_update_qty = "wout_norm",
+        x_update_mode = "x_fast_only_lpf",
+        x_lpf_softplus = True,
         # fixed_u_feedback_scale = 0.8,
         # lr_update_mode = "basic",
         # direct_inj_limiter=0.45,

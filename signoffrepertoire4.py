@@ -59,6 +59,25 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
 
 'pretrained_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 364)],
 'pretrained_sr': [(P0, 192), (Pminus, 384), (Pplus, 384),  (Pminus, 20), (Pchannel, 364)],
+'pretrained_grad_sr': [(P0, 192), 
+                       ((P0, Pminus), 96), 
+                       (Pminus, 192), 
+                       ((Pminus, P0), 96), 
+                       (Pplus, 384),  (Pminus, 20), (Pchannel, 364)],
+'pekny_BgNb': [(P0, 192), 
+                       ((P0, Pminus), 96), 
+                       (Pminus, 192), 
+                       ((Pminus, P0), 96), 
+                       (P0, 384),  (Pminus, 20), (Pchannel, 364)],
+'pekny_BNb': [(P0, 192), 
+                       (Pminus, 384), 
+                       (P0, 384),  (Pminus, 20), (Pchannel, 364)],
+'pekny_ANb': [(P0, 192), 
+                       (Pplus, 384), 
+                       (P0, 384),  (Pminus, 20), (Pchannel, 364)],
+'pekny_Nb': [(P0, 384), (Pminus, 20), (Pchannel, 364)],
+
+
 
 'wm_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 192)],
 'wm_sr_manipulation': [(P0, 192), (Pplus, 384), (Pminus, 19), (P0, 1), (Pchannel, 192)],
@@ -97,7 +116,7 @@ def generate_herzfeld_scenarios(z_list=None, n_blocks=None, Tflips=None, suffix=
     return out_dict
 
 '''add 1 noiseless and 10 noisy albert blocks'''
-for i in range(101):
+for i in range(11):
     enable_noise = (i != 0)
     playlist.update( {f'albert_block_{i}': albert_block(enable_noise=enable_noise)} )
 

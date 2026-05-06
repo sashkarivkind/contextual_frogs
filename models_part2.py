@@ -55,6 +55,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "softclamp_input_scale_0to1": False,
             "softclamp_output_scale_0to1": False,
             "fixed_u_feedback_scale": 1.0,
+            "x_lpf_softplus": False,
                     }
 
         self.device = device
@@ -288,6 +289,10 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         if args.x_update_mode == "two_lpfs":
             self.x_fast_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))
             self.x_slow_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))
+        elif args.x_update_mode == "x_fast_only_lpf":
+            self.x_fast_alpha = nn.Parameter(torch.full((self.bs,), 
+                                                        0.5 if not args.x_lpf_softplus else np.log(np.exp(0.5)-1),
+                                                         device=device))
         elif args.x_update_mode == "consolidate_to_slow":
             self.x_slow_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))
             self.x_fast_gain = nn.Parameter(torch.full((self.bs,), 0.5, device=device))
@@ -434,6 +439,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
 
         if self.args.x_update_mode in ["two_lpfs", "consolidate_to_slow", "u_only_lpf"]:
             state["x_state"] = (torch.zeros(bs, device=device), torch.zeros(bs, device=device))
+        elif self.args.x_update_mode == "x_fast_only_lpf":
+            state["x_state"] = torch.zeros(bs, device=device)
         else:
             state["x_state"] = None
 
@@ -515,6 +522,13 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             else:
                 raise ValueError(f"Unknown x_update_combine_mode {self.args.x_update_combine_mode}")
             return x_bar, (x_slow_new, x_fast_new)
+        elif self.args.x_update_mode == "x_fast_only_lpf":
+            if x_state is None:
+                raise ValueError("x_state must be provided for x_fast_only_lpf x update")
+            x_fast_alpha_ = self.x_fast_alpha if not self.args.x_lpf_softplus else torch.nn.functional.softplus(self.x_fast_alpha)
+            x_fast = x_state
+            x_fast_new = x_fast_alpha_ * x_fast + (1 - x_fast_alpha_) * this_fbk_signal
+            return x_fast_new, x_fast_new
         elif self.args.x_update_mode == "consolidate_to_slow":
             if x_state is None:
                 raise ValueError("x_state must be provided for consolidate_to_slow x update")
