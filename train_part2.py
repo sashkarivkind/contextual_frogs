@@ -91,8 +91,8 @@ os.makedirs(result_dir, exist_ok=False)
 # 1) Setup (match your routine)
 # -----------------------
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-mode =  'Lerner1' #'ERSR' #'MU' 
-# mode =  'ERSR' #'MU' #'MU' 
+# mode =  'Lerner1' #'ERSR' #'MU' 
+mode =  'ERSR' #'MU' #'MU' 
 model_specific_seed_factor = 1
 # paradigm_ = {k: 'evoked' if k <= 8 else 'spontaneous' for k in range(1, 17)}
 
@@ -212,14 +212,16 @@ if template == 'lr_reduct2':
         softclamp_output_scale_0to1= True, #False,# mode == 'MU',
         softclamp_input_scale_0to1= False, #False,# mode == 'MU',
         enable_u_feedback_scale_tuning=False, #True,
-        enable_direct_injection= mode == 'MU',
+        enable_direct_injection= False, #mode == 'MU',
         injection_opt=3,           
+        # injection_opt=0,           
         skip_gain=0.0,
         channel_trial_extra_error=0.0,
         lr_min_mult = 0, #1e-3,
         weight_decay_mode='softplus', #'sigmoid', #
         # weight_decay_mode='sigmoid',
         nl_activation='relu',
+        # nl_activation= 'rescaled_sigmoid',#'rescaled_sigmoid',#'relu', #['relu', 'const'], # 'rescaled_sigmoid', #'relu', #
         n=128*8 if mode == 'ERSR' else 256,
         disable_lpfs=True,
         optimizer_alg='RMSprop',
@@ -229,10 +231,11 @@ if template == 'lr_reduct2':
         lr_update_mode = "recoverable",
         inj_transform = "identity",
         fixed_injection_param = 0.4,
+        # fixed_injection_param = 0.0,
         lr_update_qty = "wout_norm",
         x_update_mode = "x_fast_only_lpf",
         x_lpf_softplus = True,
-        # fixed_u_feedback_scale = 0.8,
+        # fixed_u_feedback_scale = 0.6,
         # lr_update_mode = "basic",
         # direct_inj_limiter=0.45,
     )

@@ -48,6 +48,9 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
 'frogs': [(P0,TfN1),((P0,Pplus),TfA),(P0,TfN2)],
 'anti_frogs': [(P0,TfN1),(Pplus,TfA),(P0,TfN2)],
 
+'frogs_plato': [(P0,TfN1),((P0,Pplus),TfA),(Pplus,100),(P0,TfN2)],
+'anti_frogs_plato': [(P0,TfN1),(Pplus,TfA),(Pplus,100),(P0,TfN2)],
+
 'frogs_aug': [(P0,TfN1),((P0,Pplus*aug_frog_const),TfA),(P0,TfN2)],
 'anti_frogs_aug': [(P0,TfN1),(Pplus*aug_frog_const,TfA),(P0,TfN2)],
 
@@ -77,6 +80,17 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
                        (P0, 384),  (Pminus, 20), (Pchannel, 364)],
 'pekny_Nb': [(P0, 384), (Pminus, 20), (Pchannel, 364)],
 
+'pekny_BgN': [(P0, 192), 
+                       ((P0, Pminus), 96), 
+                       (Pminus, 192), 
+                       ((Pminus, P0), 96), 
+                       (P0, 96),  (Pchannel, 364)],
+
+'pekny_BgNRbase': [(P0, 192), 
+                       ((P0, Pminus), 96), 
+                       (Pminus, 192), 
+                       ((Pminus, P0), 96), 
+                       (P0, 96), (P0, 20), (Pchannel, 364)],
 
 
 'wm_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 192)],
@@ -86,7 +100,16 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
 
 'pretrained_sr_baseline0p5': [(P0, 192), (Pplus, 384//2), (Pminus, 20), (Pchannel, 364)],
 'pretrained_sr0p5': [(P0, 192), (Pminus, 384//2), (Pplus, 384//2),  (Pminus, 20), (Pchannel, 364)],
+
+
+'sarahch_Ac': [(P0, 192), 
+                       ( Pplus, 384), ( Pchannel, 30)],
+'sarahch_A': [(P0, 192), 
+                       ( Pplus, 384) ],
+
+'vaswFixedErr': [(P0, 60), ( Pplus, 100), ( Pchannel, 100), (P0, 40) ]
 })
+
 
 
 def albert_block(enable_noise=True, Pplus=14, Pnoise=6, Pnormalisation=15):
@@ -121,12 +144,12 @@ for i in range(11):
     playlist.update( {f'albert_block_{i}': albert_block(enable_noise=enable_noise)} )
 
 hrz_params = {'z_list': [0.1,0.5,0.9], 'n_blocks': 25}
-for iter in range(5):
+for iter in range(100):
     hrz_playlist =  generate_herzfeld_scenarios(**hrz_params, suffix=f'${iter}', probe_first=True)
     playlist.update(hrz_playlist)
 
 
 parsed_playlist = {k: parse_samples(v) for k, v in playlist.items()}
 print(f'generated {len(parsed_playlist)} paradigms: {list(parsed_playlist.keys())}')
-with open('signoffrepertoire4.3.pkl', 'wb') as f:
+with open('signoffrepertoire4.3h100.pkl', 'wb') as f:
     pickle.dump(parsed_playlist, f)
