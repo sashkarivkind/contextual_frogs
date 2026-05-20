@@ -1,0 +1,1072 @@
+import numpy as np
+from typing import List, Optional
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.nn.utils.parametrize as parametrize
+
+
+class BatchedElboGenerativeModelTop(nn.Module):
+    def __init__(self,*args, **kwargs):
+            raise NotImplementedError("This class is now deprecated in favor of BatchedElboGenerativeModelTopMulti, for old implementations check legacy_stuff.py.")
+
+
+class BatchedElboGenerativeModelTopMulti(nn.Module):
+
+    def __init__(self, device: torch.device, args=None, fudge=1e-4, batch_size: Optional[int] = None):
+        super().__init__()
+
+        default_args = {
+            "injection_opt": 1,
+            "skip_gain": 0.0,
+            "channel_trial_extra_error": 0.0,
+            "multirate_m": 1,
+            "lr_min_mult": 0.25,
+            "weight_decay_mode": "softplus",
+            "nl_activation": "relu",
+            "disable_lpfs": False,
+            "direct_inj_limiter": 1.0,
+            "lr_bound": None,
+            "enable_sigma_b_tuning": True,
+            "bound_weight_decay": False,
+            "enable_weight_decay_exp": False,
+            "enable_weight_learning_exp": False,
+            "enable_bias_update": False,
+            "develop_b_tgt": 0.0,
+            "enable_w_in_plasticity": False,
+            "x_update_mode": "vanilla",
+            "x_update_combine_mode": "equal_mix",
+
+            # NEW
+            "enable_separate_win_per_rate": False,
+            "enable_w_in_scale_tuning": False,
+            "manual_w_in_scale": None,
+            "enforce_positive_biases": False,
+            "initiate_w_in_tuning_with_steady_state_vals": False,
+            "debug_flag_win2nd_column_positive_only": False, 
+            "apply_scaled_soft_plus_on_w_in_params": False,
+            "lr_update_mode": "basic",
+            "lr_recovery_rate": 0.0, 
+            "lr_update_qty": "dw_out_norm" ,
+            "enable_output_scale_tuning": False,
+            "enable_input_scale_tuning": False,
+            "inj_transform": "sigmoid",  # options: "sigmoid", "identity"
+            "fixed_injection_param": 0.0,
+            "softclamp_input_scale_0to1": False,
+            "softclamp_output_scale_0to1": False,
+            "fixed_u_feedback_scale": 1.0,
+            "x_lpf_softplus": False,
+
+            # Batch-periodic parameter tying.
+            # None preserves the old behaviour. Set to e.g. 64 so rows
+            # i, i+64, i+128, ... share one underlying learnable value.
+            "batch_param_period": None,
+            "batch_param_tie_names": "all",  # "all" or iterable/comma-separated names
+            "batch_param_tie_grad": "sum",  # "sum" = normal sharing; "mean" = average within tied class
+                    }
+
+        self.device = device
+        self.mult_activation_mode = isinstance(args.nl_activation, list)
+
+        for key, value in default_args.items():
+            if not hasattr(args, key):
+                setattr(args, key, value)
+
+        if args.disable_lpfs:
+            assert not (args.enable_qlpf or args.enable_ylpf or args.enable_elpf), \
+                "Cannot enable LPFs if disable_lpfs is set"
+
+        if args.enable_output_scale_tuning and args.enable_input_scale_tuning:
+            raise ValueError(
+                "Both output scale tuning and input scale tuning cannot be enabled at the same time, for now."
+            )
+
+        if batch_size is None:
+            if not hasattr(args, "bs"):
+                raise ValueError("Provide batch_size or set args.bs")
+            batch_size = int(args.bs)
+
+        self.bs = int(batch_size)
+        self.m = int(args.multirate_m)
+        self.args = args
+        self._periodic_batch_tensors = {}
+        self.fudge = fudge
+        self.win_nl = (lambda x: x) if not args.enable_w_in_plasticity else lambda x: F.tanh(x)
+        def randu(shape, low, high):
+            return low + (high - low) * torch.rand(shape, device=device)
+
+        # ---------------------------
+        # scalar / per-rate parameters
+        # ---------------------------
+
+        #leraning rates were set for n=128. For different n the initialisation 
+        #should be adjusted
+        size_fac = np.log(128./args.n)
+        if self.m == 1:
+            init_log_learning_rate = (
+                randu((self.bs, self.m), -11.0, -5.0) + size_fac
+                if not args.zzz_legacy_init
+                else torch.full((self.bs, self.m), -6.0, device=device)
+            )
+        elif self.m == 2:
+            init_log_learning_rate_slow = (
+                randu((self.bs, 1), -11.0, -7.0) + size_fac
+                if not args.zzz_legacy_init
+                else torch.full((self.bs, 1), -6.0, device=device)
+            )
+            init_log_learning_rate_fast = (
+                randu((self.bs, 1), -8.0, -5.0) + size_fac
+                if not args.zzz_legacy_init
+                else torch.full((self.bs, 1), -6.0, device=device)
+            )
+            init_log_learning_rate = torch.cat(
+                [init_log_learning_rate_slow, init_log_learning_rate_fast], dim=1
+            )
+        else:
+            init_log_learning_rate = (
+                randu((self.bs, self.m), -11.0, -5.0) + size_fac
+                if not args.zzz_legacy_init
+                else torch.full((self.bs, self.m), -6.0, device=device)
+            )
+
+        if args.apply_lr_decay:
+            init_log_learning_rate_decay = (
+                randu((self.bs, self.m), -1.0, 1.0)
+                if not args.zzz_legacy_init
+                else torch.full((self.bs, self.m), 0.0, device=device)
+            )
+        else:
+            init_log_learning_rate_decay = torch.zeros((self.bs, self.m), device=device)
+
+        init_sigma_b = (
+            randu((self.bs,), 0.05, 0.55)
+            if not args.zzz_legacy_init
+            else torch.full((self.bs,), 0.1, device=device)
+        )
+        init_output_scale = (
+            (randu((self.bs,), 0.8, 1.0) if not args.softclamp_output_scale_0to1 else randu((self.bs,), 3.5, 6.5))
+            if not args.zzz_legacy_init
+            else torch.full((self.bs,), 1.0, device=device)
+        )
+
+        init_input_scale = (
+            randu((self.bs,), 0.8, 1.0)
+            if not args.zzz_legacy_init
+            else torch.full((self.bs,), 1.0, device=device)
+        )
+
+        if args.model_tie_lr_weight_decay:
+            init_sp_weight_decay = (
+                randu((self.bs, self.m), -5.0, 5.0)
+                if not args.zzz_legacy_init
+                else torch.full((self.bs, self.m), -4.0, device=device)
+            )
+        else:
+            init_sp_weight_decay = (
+                randu((self.bs, self.m), -6.0, 2.0)
+                if not args.zzz_legacy_init
+                else torch.full((self.bs, self.m), -7.0, device=device)
+            )
+
+        init_sigma_a = (
+            randu((self.bs,), 0.02, 0.12)
+            if not args.zzz_legacy_init
+            else torch.full((self.bs,), 0.1, device=device)
+        )
+        init_sigma_x = (
+            randu((self.bs,), 0.02, 0.12)
+            if not args.zzz_legacy_init
+            else torch.full((self.bs,), 0.1, device=device)
+        )
+
+        optimize_noises = (not args.model == "toy") or getattr(args, "optimize_toy_noises", False)
+
+        self._set_batch_tensor("log_learning_rate", init_log_learning_rate, trainable=True)
+
+        self._set_batch_tensor(
+            "log_learning_rate_decay",
+            init_log_learning_rate_decay,
+            trainable=bool(args.apply_lr_decay),
+        )
+
+        self._set_batch_tensor(
+            "sigma_b",
+            init_sigma_b if args.enable_sigma_b_tuning else torch.full((self.bs,), 0.1, device=device),
+            trainable=bool(args.enable_sigma_b_tuning),
+        )
+
+        # scale of input weights added to explore input weight plastisity
+        w_in_scale_shape = (self.m,) if self._separate_win_mode() else (1,)
+        self.w_in_scale = (
+            nn.Parameter(randu(w_in_scale_shape, 0.5, 2.0))    
+            if args.enable_w_in_scale_tuning
+            else torch.ones(w_in_scale_shape, device=device, requires_grad=False) * (args.manual_w_in_scale if args.manual_w_in_scale is not None else 1.0)
+        )
+
+        self._set_batch_tensor(
+            "output_scale",
+            init_output_scale if args.enable_output_scale_tuning else torch.ones(self.bs, device=device),
+            trainable=bool(args.enable_output_scale_tuning),
+        )
+
+        self._set_batch_tensor(
+            "input_scale",
+            init_input_scale if args.enable_input_scale_tuning else torch.ones(self.bs, device=device),
+            trainable=bool(args.enable_input_scale_tuning),
+        )
+
+        self._set_batch_tensor(
+            "u_feedback_scale",
+            torch.ones(self.bs, device=device) if args.enable_u_feedback_scale_tuning
+            else args.fixed_u_feedback_scale * torch.ones(self.bs, device=device),
+            trainable=bool(args.enable_u_feedback_scale_tuning),
+        )
+
+        self._set_batch_tensor("sp_weight_decay", init_sp_weight_decay, trainable=True)
+
+        self._set_batch_tensor(
+            "weight_decay_exp",
+            torch.full((self.bs, self.m), 1.0, device=device),
+            trainable=bool(args.enable_weight_decay_exp),
+        )
+
+        self._set_batch_tensor(
+            "weight_learning_exp",
+            torch.full((self.bs, self.m), 1.0, device=device),
+            trainable=bool(args.enable_weight_learning_exp),
+        )
+
+        self._set_batch_tensor(
+            "q_scale",
+            randu((self.bs,), 0.3, 1.5) if args.enable_q_scale_tuning else torch.ones(self.bs, device=device),
+            trainable=bool(args.enable_q_scale_tuning),
+        )
+
+        if not args.assume_opt_output_noise:
+            self._set_batch_tensor(
+                "sigma_a",
+                init_sigma_a if optimize_noises else torch.full(
+                    (self.bs,), float(args.toymodel_OUsigma_obs), device=device
+                ),
+                trainable=bool(optimize_noises),
+            )
+
+        self._set_batch_tensor(
+            "sigma_x",
+            init_sigma_x if optimize_noises else torch.full(
+                (self.bs,), float(args.toymodel_OUsigma_process), device=device
+            ),
+            trainable=bool(optimize_noises),
+        )
+
+        self._init_w_in_plasticity_params(randu, device)
+
+        self._set_batch_tensor(
+            "bias_lr",
+            torch.full((self.bs,), 0.0, device=device),
+            trainable=bool(args.enable_bias_update),
+        )
+
+        self._set_batch_tensor(
+            "tauqlpf_m1",
+            torch.full((self.bs,), -1.0 if args.enable_qlpf else -1000.0, device=device),
+            trainable=bool(args.enable_qlpf),
+        )
+        self._set_batch_tensor(
+            "tauylpf_m1",
+            torch.full((self.bs,), -1.0 if args.enable_ylpf else -1000.0, device=device),
+            trainable=bool(args.enable_ylpf),
+        )
+        self._set_batch_tensor(
+            "tauelpf_m1",
+            torch.full((self.bs,), 1.0 if args.enable_elpf else -1000.0, device=device),
+            trainable=bool(args.enable_elpf),
+        )
+
+        self._set_batch_tensor(
+            "direct_injection_scale",
+            randu((self.bs,), 0.05, 0.4) if args.enable_direct_injection
+            else args.fixed_injection_param * torch.ones(self.bs, device=device),
+            trainable=bool(args.enable_direct_injection),
+        )
+
+        # random features
+        self.register_buffer("_z_biases", torch.empty(0))
+        self.register_buffer("_w_in", torch.empty(0))
+        self.register_buffer("_w_inq", torch.empty(0))
+
+        if args.x_update_mode == "two_lpfs":
+            self._set_batch_tensor("x_fast_alpha", torch.full((self.bs,), 0.5, device=device), trainable=True)
+            self._set_batch_tensor("x_slow_alpha", torch.full((self.bs,), 0.5, device=device), trainable=True)
+        elif args.x_update_mode == "x_fast_only_lpf":
+            self._set_batch_tensor(
+                "x_fast_alpha",
+                torch.full((self.bs,), 0.5 if not args.x_lpf_softplus else np.log(np.exp(0.5)-1), device=device),
+                trainable=True,
+            )
+        elif args.x_update_mode == "consolidate_to_slow":
+            self._set_batch_tensor("x_slow_alpha", torch.full((self.bs,), 0.5, device=device), trainable=True)
+            self._set_batch_tensor("x_fast_gain", torch.full((self.bs,), 0.5, device=device), trainable=True)
+        elif args.x_update_mode == "u_only_lpf":
+            self._set_batch_tensor("x_slow_alpha", torch.full((self.bs,), 0.5, device=device), trainable=True)
+
+    # ---------------------------
+    # batch-periodic parameter tying
+    # ---------------------------
+
+    def __getattr__(self, name: str):
+        """
+        Expose periodic batch tensors under their original names.
+
+        If, for example, `log_learning_rate` is tied with period 64 and
+        `bs == 256`, the optimiser owns only `_log_learning_rate_periodic_base`
+        with shape [64, m]. Accessing `self.log_learning_rate` returns the
+        expanded [256, m] tensor by indexing rows with `row % 64`.
+        """
+        periodic = self.__dict__.get("_periodic_batch_tensors", None)
+        if periodic is not None and name in periodic:
+            base_name, idx_name = periodic[name]
+            base = super().__getattr__(base_name)
+            idx = super().__getattr__(idx_name).to(device=base.device)
+            return base.index_select(0, idx)
+        return super().__getattr__(name)
+
+    def _batch_tie_period_for(self, name: str, value: torch.Tensor) -> Optional[int]:
+        """Return tying period for this tensor, or None to keep old behaviour."""
+        period = getattr(self.args, "batch_param_period", None)
+        if period is None:
+            return None
+
+        period = int(period)
+        if period <= 0:
+            return None
+
+        if not isinstance(value, torch.Tensor):
+            return None
+
+        # Only tensors whose leading dimension is exactly the model batch are tied.
+        # Runtime state is created elsewhere and is intentionally not tied.
+        if value.ndim == 0 or int(value.shape[0]) != int(self.bs):
+            return None
+
+        tie_names = getattr(self.args, "batch_param_tie_names", "all")
+        if tie_names not in ("all", "*"):
+            if isinstance(tie_names, str):
+                tie_names = {x.strip() for x in tie_names.split(",") if x.strip()}
+            else:
+                tie_names = set(tie_names)
+            if name not in tie_names:
+                return None
+
+        return min(period, int(self.bs))
+
+    def _maybe_register_mean_tied_grad_hook(
+        self,
+        name: str,
+        param: nn.Parameter,
+        idx: torch.Tensor,
+        period: int,
+    ) -> None:
+        grad_mode = getattr(self.args, "batch_param_tie_grad", "sum")
+        if grad_mode == "sum":
+            return
+        if grad_mode != "mean":
+            raise ValueError(
+                f"Unknown batch_param_tie_grad={grad_mode!r}; expected 'sum' or 'mean'."
+            )
+
+        counts = torch.bincount(idx.detach().cpu(), minlength=period).clamp_min(1)
+        view_shape = (period,) + (1,) * (param.ndim - 1)
+
+        def mean_tied_grad_hook(grad, counts=counts, view_shape=view_shape):
+            return grad / counts.to(device=grad.device, dtype=grad.dtype).reshape(view_shape)
+
+        param.register_hook(mean_tied_grad_hook)
+
+    def _set_batch_tensor(self, name: str, value: torch.Tensor, trainable: bool) -> None:
+        """
+        Register a batch-shaped tensor, optionally with periodic sharing.
+
+        With args.batch_param_period=None, this behaves like the old class:
+        trainable tensors become nn.Parameter and fixed tensors become buffers.
+
+        With args.batch_param_period=P, a tensor of shape [bs, ...] is stored as
+        a base tensor of shape [min(P, bs), ...], and `self.<name>` expands it to
+        shape [bs, ...] using row index `torch.arange(bs) % P`.
+        """
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"Expected tensor for {name}, got {type(value)!r}")
+
+        period = self._batch_tie_period_for(name, value)
+        if period is None:
+            if trainable:
+                self.register_parameter(name, nn.Parameter(value))
+            else:
+                self.register_buffer(name, value.detach().requires_grad_(False))
+            return
+
+        base = value[:period].clone().detach()
+        idx = torch.arange(int(self.bs), device=value.device, dtype=torch.long) % period
+
+        base_name = f"_{name}_periodic_base"
+        idx_name = f"_{name}_periodic_idx"
+
+        if trainable:
+            param = nn.Parameter(base)
+            self._maybe_register_mean_tied_grad_hook(name, param, idx, period)
+            self.register_parameter(base_name, param)
+        else:
+            self.register_buffer(base_name, base.requires_grad_(False))
+
+        self.register_buffer(idx_name, idx, persistent=False)
+        self._periodic_batch_tensors[name] = (base_name, idx_name)
+
+    def periodic_base(self, name: str) -> torch.Tensor:
+        """Return the compact stored tensor for a tied batch parameter."""
+        if name not in self._periodic_batch_tensors:
+            raise KeyError(f"{name!r} is not batch-periodic in this model")
+        base_name, _ = self._periodic_batch_tensors[name]
+        return super().__getattr__(base_name)
+
+    def periodic_tied_names(self):
+        """Names whose first dimension is periodically tied."""
+        return tuple(self._periodic_batch_tensors.keys())
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        """
+        Backwards-compatible checkpoint loading.
+
+        Old checkpoints store full batch tensors under names like
+        `log_learning_rate`. With periodic tying enabled, this class stores
+        the compact learnable tensor under `_log_learning_rate_periodic_base`.
+        When an old full-batch key is found, take its first period rows.
+        """
+        for name, (base_name, _) in self._periodic_batch_tensors.items():
+            old_key = prefix + name
+            new_key = prefix + base_name
+            if old_key in state_dict and new_key not in state_dict:
+                base = super().__getattr__(base_name)
+                old_value = state_dict.pop(old_key)
+                state_dict[new_key] = old_value[: base.shape[0]].clone()
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
+    # ---------------------------
+    # mode helpers
+    # ---------------------------
+
+    def _separate_win_mode(self) -> bool:
+        return bool(getattr(self.args, "enable_separate_win_per_rate", False))
+
+    def _hidden_has_rate_axis(self) -> bool:
+        return self._separate_win_mode()
+
+    def _broadcast_x_to_hidden(self, x: torch.Tensor) -> torch.Tensor:
+        return x[:, None, None] if self._hidden_has_rate_axis() else x[:, None]
+
+    def _broadcast_inj_to_hidden(self, inj: torch.Tensor) -> torch.Tensor:
+        return inj[:, None, None] if self._hidden_has_rate_axis() else inj[:, None]
+
+    # ---------------------------
+    # activation / utilities
+    # ---------------------------
+
+    def phi(self, x, nl_activation=None):
+        if self.mult_activation_mode and nl_activation is None:
+            activations = []
+            for act in self.args.nl_activation:
+                act_fn = BatchedElboGenerativeModelTopMulti.phi.__get__(self)
+                activations.append(act_fn(x, nl_activation=act))
+            return torch.stack(activations, dim=-1)
+
+        nl_activation = self.args.nl_activation if nl_activation is None else nl_activation
+        if nl_activation == "relu":
+            return F.relu(x)
+        elif nl_activation == "rescaled_sigmoid":
+            return torch.sigmoid(4 * x - 2)
+        elif nl_activation == "const":
+            return torch.ones_like(x)
+        else:
+            raise ValueError(f"Unknown nl_activation {nl_activation}")
+
+    @staticmethod
+    def softplus(x: torch.Tensor) -> torch.Tensor:
+        return torch.log1p(torch.exp(x))
+
+    @staticmethod
+    def softclamp(
+        x: torch.Tensor,
+        min_val: float = 0.0,
+        max_val: float = 1.0,
+    ) -> torch.Tensor:
+        if max_val <= min_val:
+            raise ValueError(f"Expected max_val > min_val, got {max_val} <= {min_val}")
+        lower = x - float(min_val)
+        upper = x - float(max_val)
+        # Smoothly approximates a hard clamp while staying close to identity in-range.
+        return float(min_val) + F.softplus(lower) - F.softplus(upper)
+
+    # ---------------------------
+    # feature / parameter init helpers
+    # ---------------------------
+
+    def _init_w_in_plasticity_params(self, randu, device):
+        if self._separate_win_mode():
+            shape = (self.bs, self.m)
+        else:
+            # store as [bs,1] rather than [bs] for easier broadcasting
+            shape = (self.bs, 1)
+
+        if self.args.enable_w_in_plasticity:
+            if not self.args.apply_scaled_soft_plus_on_w_in_params:
+                self._set_batch_tensor("w_in_lr_", randu(shape, 0.001, 0.05), trainable=True)
+                self._set_batch_tensor("w_in_decay_", randu(shape, 0.0, 0.02), trainable=True)
+            else:
+                self._set_batch_tensor("scsp_w_in_lr_", randu(shape, 0, 5.), trainable=True)
+                self._set_batch_tensor("scsp_w_in_decay_", randu(shape, 0, 2.), trainable=True)
+
+        # else:
+        #     self.w_in_lr_ = torch.zeros(shape, device=device, requires_grad=False)
+        #     self.w_in_decay_ = torch.zeros(shape, device=device, requires_grad=False)
+
+    def _ensure_random_features(self, n: int, device):
+        if self._separate_win_mode():
+            need = n * self.m
+            if self._w_in.numel() != need:
+                self.register_buffer("_z_biases", torch.randn(n, self.m, device=device))
+                self.register_buffer("_w_in", torch.randn(n, self.m, device=device))
+                self.register_buffer("_w_inq", torch.randn(n, self.m, device=device))
+        else:
+            if self._w_in.numel() != n:
+                self.register_buffer("_z_biases", torch.randn(n, device=device))
+                self.register_buffer("_w_in", torch.randn(n, device=device))
+                self.register_buffer("_w_inq", torch.randn(n, device=device))
+
+    def get_biases_and_w_in(self, n: int, device):
+        self._ensure_random_features(n, device)
+        if self._separate_win_mode():
+            biases = self.sigma_b[:, None, None] * self._z_biases[None, :, :]
+        else:
+            biases = self.sigma_b[:, None] * self._z_biases[None, :]
+        if self.args.enforce_positive_biases:
+            biases = torch.abs(biases)
+        
+        w_in = self.w_in_scale *self._w_in
+        if self.args.debug_flag_win2nd_column_positive_only:
+            if self._separate_win_mode() and self.m >= 2:
+                w_in = w_in.clone()
+                w_in[:, 1] = torch.clamp(w_in[:, 1], min=0.0)
+            else:
+                raise ValueError("debug_flag_win2nd_column_positive_only only compatible with separate_win_per_rate and m>=2")
+        return biases, w_in
+
+    def get_winq(self, n: int, device):
+        self._ensure_random_features(n, device)
+        return self._w_inq
+
+    def _init_runtime_state(self, bs: int, n: int, device):
+        state = {}
+        state["w_out"] = torch.zeros(bs, n, self.m, device=device)
+
+        if self._separate_win_mode():
+            state["bias_tuning"] = torch.zeros(bs, n, self.m, device=device)
+        else:
+            state["bias_tuning"] = torch.zeros(bs, n, device=device)
+
+        state["u"] = torch.zeros(bs, device=device)
+        state["x"] = torch.zeros(bs, device=device)
+        state["e"] = torch.zeros(bs, device=device)
+
+        state["qlp"] = torch.zeros(bs, device=device)
+        state["ylp"] = torch.zeros(bs, device=device)
+        state["elp"] = torch.zeros(bs, device=device)
+
+        if self.args.enable_w_in_plasticity:
+            if self._separate_win_mode():
+                state["w_in_tuning"] = torch.zeros(bs, n, self.m, device=device)                                       
+            else:
+                state["w_in_tuning"] = torch.zeros(bs, n, device=device)
+        else:
+            state["w_in_tuning"] = None
+
+        if self.args.x_update_mode in ["two_lpfs", "consolidate_to_slow", "u_only_lpf"]:
+            state["x_state"] = (torch.zeros(bs, device=device), torch.zeros(bs, device=device))
+        elif self.args.x_update_mode == "x_fast_only_lpf":
+            state["x_state"] = torch.zeros(bs, device=device)
+        else:
+            state["x_state"] = None
+
+        return state
+
+    # ---------------------------
+    # unchanged utility methods
+    # ---------------------------
+
+    def _expand_time_input(self, tval: torch.Tensor, bs: int) -> torch.Tensor:
+        if tval is None:
+            return torch.zeros(bs, device=self.log_learning_rate.device)
+        if tval.ndim == 0:
+            return tval.expand(bs)
+        if tval.numel() == 1 and tval.shape[0] == 1:
+            return tval.expand(bs)
+        if tval.shape[0] != bs:
+            raise ValueError(f"Expected time-slice with shape [bs]={bs}, got {tuple(tval.shape)}")
+        return tval
+
+    def _assign_wd(self, lr0, n):
+        if self.args.weight_decay_mode == "softplus":
+            wd = self.softplus(self.sp_weight_decay)
+        elif self.args.weight_decay_mode == "sigmoid":
+            wd = self.args.lr_min_mult * lr0 * n * torch.sigmoid(self.sp_weight_decay)
+        elif self.args.weight_decay_mode == "clipped_sigmoid":
+            wd = self.args.weight_decay_max * torch.sigmoid(self.sp_weight_decay)
+        else:
+            raise ValueError(f"Unknown weight_decay_mode {self.args.weight_decay_mode}")
+
+        if self.args.bound_weight_decay:
+            wd_bound = 1.0 - lr0 * self.args.n
+            wd = wd_bound * torch.tanh(wd / wd_bound)
+        return wd
+
+    def _init_lr(self, bs):
+        lr_mult = torch.ones(bs, self.m, device=self.device)
+        lr0 = torch.exp(self.log_learning_rate)
+        if self.args.lr_bound is not None:
+            total_lr0 = torch.einsum("km->k", lr0)
+            target_total_lr0 = self.args.lr_bound * torch.tanh(total_lr0 / self.args.lr_bound)
+            lr0 = lr0 * (target_total_lr0 / total_lr0).unsqueeze(1)
+            self.debug_lr0 = lr0
+        lr = lr0 * lr_mult
+        return lr, lr0, lr_mult
+
+    def _prep_inputs(self, y, internal_noise, q, bs):
+        if y is None:
+            y = torch.full((bs,), np.double("nan"), device=self.device)
+        else:
+            y = self._expand_time_input(y, bs)
+
+        q = self._expand_time_input(
+            q if q is not None else torch.zeros((1,), device=self.device), bs
+        )
+        internal_noise = self._expand_time_input(internal_noise, bs)
+        return y, internal_noise, q
+
+    def _lowpass_filter(self, new_value, prev_lp, tau, enable):
+        if enable:
+            return (1.0 - 1.0 / tau) * prev_lp + (1.0 / tau) * new_value
+        else:
+            return new_value
+
+    def _update_x(self, x, u, elp, x_state):
+        this_fbk_signal = u * self.u_feedback_scale + elp
+        if self.args.x_update_mode == "vanilla":
+            return this_fbk_signal, x_state
+        elif self.args.x_update_mode == "two_lpfs":
+            if x_state is None:
+                raise ValueError("x_state must be provided for dual-rate x update")
+            x_slow, x_fast = x_state
+            x_slow_new = self.x_slow_alpha * x_slow + (1 - self.x_slow_alpha) * this_fbk_signal
+            x_fast_new = self.x_fast_alpha * x_fast + (1 - self.x_fast_alpha) * this_fbk_signal
+            if self.args.x_update_combine_mode == "equal_mix":
+                x_bar = 0.5 * x_slow_new + 0.5 * x_fast_new
+            elif self.args.x_update_combine_mode == "learned_mix":
+                x_bar = self.x_slow_weight * x_slow_new + self.x_fast_weight * x_fast_new
+            else:
+                raise ValueError(f"Unknown x_update_combine_mode {self.args.x_update_combine_mode}")
+            return x_bar, (x_slow_new, x_fast_new)
+        elif self.args.x_update_mode == "x_fast_only_lpf":
+            if x_state is None:
+                raise ValueError("x_state must be provided for x_fast_only_lpf x update")
+            x_fast_alpha_ = self.x_fast_alpha if not self.args.x_lpf_softplus else torch.nn.functional.softplus(self.x_fast_alpha)
+            x_fast = x_state
+            x_fast_new = x_fast_alpha_ * x_fast + (1 - x_fast_alpha_) * this_fbk_signal
+            return x_fast_new, x_fast_new
+        elif self.args.x_update_mode == "consolidate_to_slow":
+            if x_state is None:
+                raise ValueError("x_state must be provided for consolidate_to_slow x update")
+            x_slow, x_fast = x_state
+            x_slow_new = self.x_slow_alpha * x_slow + (1 - self.x_slow_alpha) * this_fbk_signal
+            x_fast_new = self.x_fast_gain * (this_fbk_signal - x_slow)
+            x_bar = x_slow_new + x_fast_new
+            return x_bar, (x_slow_new, x_fast_new)
+        elif self.args.x_update_mode == "u_only_lpf":
+            x_slow, x_fast = x_state
+            x_slow_new = self.x_slow_alpha * x_slow + (1 - self.x_slow_alpha) * u * self.u_feedback_scale
+            x_bar = elp + x_slow_new
+            return x_bar, (x_slow_new, None)
+        else:
+            raise ValueError(f"Unknown x_update_mode {self.args.x_update_mode}")
+
+    def _lr_update(self, lr_mult, lr0, weight_info=None):
+
+        if self.args.lr_update_qty == "dw_out_norm":
+            weights_to_consider = weight_info['dw_out']
+        elif self.args.lr_update_qty == "dw_out1_norm":
+            weights_to_consider = weight_info['dw_out1']
+        elif self.args.lr_update_qty == "wout_norm":
+            weights_to_consider = weight_info['w_out']
+        else:
+            raise ValueError(f"Unknown lr_update_qty {self.args.lr_update_qty}")
+        norms = torch.sqrt(self.fudge + torch.sum(weights_to_consider ** 2, dim=1))
+
+
+        if self.args.lr_update_mode == "basic":
+            nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
+            lr_mult = self.args.lr_min_mult + (lr_mult - self.args.lr_min_mult) * \
+                torch.exp(-(nonneg_decay_coeff * norms))
+            lr = lr0 * lr_mult
+        if self.args.lr_update_mode == "recoverable":
+            #same as basic but with a recovery toward lr_mult=1
+            nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
+            lr_plastic = lr_mult - self.args.lr_min_mult
+            lr_plastic = (1-self.args.lr_recovery_rate) * lr_plastic + self.args.lr_recovery_rate * 1.0
+            lr_plastic = lr_plastic * torch.exp(-(nonneg_decay_coeff * norms))
+            lr_mult = self.args.lr_min_mult + lr_plastic
+            lr = lr0 * lr_mult
+        if self.args.lr_update_mode == "recoverable_opt2":
+            #same as recoverable but with the order of updates swapped
+            nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
+            lr_plastic = lr_mult - self.args.lr_min_mult
+            lr_plastic = (1-self.args.lr_recovery_rate) * lr_plastic + self.args.lr_recovery_rate * 1.0
+            lr_plastic = lr_plastic * torch.exp(-(nonneg_decay_coeff * norms))
+            lr_mult = self.args.lr_min_mult + lr_plastic
+            lr = lr0 * lr_mult        
+        return lr_mult, lr
+
+    # ---------------------------
+    # hidden / input helpers
+    # ---------------------------
+
+    def _compute_scaled_q_in(self, prescaled_w_inq, qlp):
+        if prescaled_w_inq is None:
+            return 0.0
+
+        if self._separate_win_mode():
+            q_gain = (self.q_scale * qlp)[:, None, None]
+            return prescaled_w_inq[None, :, :] * q_gain
+        else:
+            q_gain = (self.q_scale * qlp)[:, None]
+            return prescaled_w_inq[None, :] * q_gain
+
+    def _compute_w_in(self, w_in, w_in_tuning):
+        base = w_in.unsqueeze(0)
+        if not self.args.enable_w_in_plasticity:
+            return base
+        return self.win_nl(base + w_in_tuning * torch.sign(base))
+
+    def _hidden_preact(self, biases_, x, w_in_, scaled_q_in):
+        return biases_ + self._broadcast_x_to_hidden(x) * w_in_ + scaled_q_in
+
+    def _compute_hidden(self, biases_, x, w_in_, scaled_q_in):
+        return self.phi(self._hidden_preact(biases_, x, w_in_, scaled_q_in))
+
+    def _compute_u(self, w_out, h, x):
+        if self._separate_win_mode():
+            u = torch.einsum("bnm,bnm->b", w_out, h)
+        else:
+            w_eff = w_out.sum(dim=2)
+            if not self.mult_activation_mode:
+                u = torch.einsum("bn,bn->b", w_eff, h)
+            else:
+                u = torch.einsum("bni,bni->b", w_eff, h)
+        return u + self.args.skip_gain * x
+
+    def _compute_h_bar(self, h, biases_, x, w_in_, u, e, scaled_q_in, inj_, mode=None, x_state=None):
+        if mode == 2:
+            if self.args.noise_injection_node == "x":
+                raise ValueError("injection_opt2 incompatible with noise_injection_node 'x' yet")
+            x_prime, _ = self._update_x(x, u, e, x_state)
+            h_prime = self._compute_hidden(biases_, x_prime, w_in_, scaled_q_in)
+            inj = self._broadcast_inj_to_hidden(inj_)
+            return (1.0 - inj) * h + inj * h_prime
+
+        elif mode == 3:
+            if self.args.noise_injection_node == "x":
+                raise ValueError("injection_opt3 incompatible with noise_injection_node 'x' yet")
+            x_prime, _ = self._update_x(x, u, e, x_state)
+            x_bar = (1.0 - inj_) * x + inj_ * x_prime
+            return self._compute_hidden(biases_, x_bar, w_in_, scaled_q_in)
+
+        elif mode == 0:
+            return h
+
+        else:
+            raise ValueError(f"Unknown injection_opt mode {mode}")
+
+    def _w_in_update(self, w_in_tuning, h_bar):
+        if self.mult_activation_mode:
+            raise ValueError("w_in plasticity not yet implemented for mult_activation_mode yet")
+
+        if self._separate_win_mode():
+            decay = self.w_in_decay().unsqueeze(1)   # [bs,1,m]
+            lr = self.w_in_lr().unsqueeze(1)         # [bs,1,m]
+        else:
+            decay = self.w_in_decay()                # [bs,1]
+            lr = self.w_in_lr()                      # [bs,1]
+        return (1 - decay) * w_in_tuning + lr * h_bar
+
+    def _bias_update(self, biases, bias_tuning, x, w_in_, scaled_q_in):
+        if self.args.enable_bias_update:
+            biases_ = biases + bias_tuning
+            preact = self._broadcast_x_to_hidden(x) * w_in_ + scaled_q_in
+            if self._separate_win_mode():
+                bias_tuning = bias_tuning + (self.args.develop_b_tgt + preact - biases_) * self.bias_lr[:, None, None]
+            else:
+                bias_tuning = bias_tuning + (self.args.develop_b_tgt + preact - biases_) * self.bias_lr[:, None]
+            return biases_, bias_tuning
+        return biases, bias_tuning
+
+    def _compute_elp_for_learning(self, elp):
+        if self.args.enable_weight_learning_exp:
+            return torch.sign(elp[:, None]) * torch.abs(elp[:, None]).pow(
+                self.softplus(self.weight_learning_exp)
+            )
+        else:
+            return elp[:, None]
+
+    def _compute_dw_out(self, lr, elp, h_bar, w_out, wd):
+        # elp_ is [bs,m]
+        elp_ = self._compute_elp_for_learning(elp)
+
+        if self._separate_win_mode():
+            dw_out = lr.unsqueeze(1) * elp_.unsqueeze(1) * h_bar
+        else:
+            h_bar_ = h_bar.unsqueeze(2) if not self.mult_activation_mode else h_bar
+            dw_out = lr.unsqueeze(1) * elp_.unsqueeze(1) * h_bar_
+
+        if self.args.model_tie_lr_weight_decay:
+            decay = (lr * wd).unsqueeze(1)
+        else:
+            decay = wd.unsqueeze(1)
+
+        if self.args.enable_weight_decay_exp:
+            w_out_ = torch.sign(w_out) * torch.abs(w_out).pow(self.weight_decay_exp.unsqueeze(1))
+        else:
+            w_out_ = w_out
+
+        return dw_out, - decay * w_out_
+
+    def _compute_steady_state_w_in_tuning(self, biases):
+        if self._separate_win_mode():
+            raise NotImplementedError("Steady state w_in tuning not implemented for separate_win_mode yet")
+        else:
+            #biases in [b,n], w_in_tuning in [b,n], w_in_decay and w_in_lr in [b,1]
+            #we need to compute phi(biases) * self.w_in_lr / self.w_in_decay
+            return self.win_nl(biases) * (self.w_in_lr() / self.w_in_decay())
+
+    def w_in_lr(self):
+        if not self.args.apply_scaled_soft_plus_on_w_in_params:
+            return self.w_in_lr_
+        else:
+            return 0.01*self.softplus(self.scsp_w_in_lr_)
+    
+    def w_in_decay(self):
+        if not self.args.apply_scaled_soft_plus_on_w_in_params:
+            return self.w_in_decay_
+        else:
+            return 0.01*self.softplus(self.scsp_w_in_decay_)
+
+    # ---------------------------
+    # forward rollout
+    # ---------------------------
+
+    def f(
+        self,
+        n: int,
+        noises: List[torch.Tensor],
+        ys: List[Optional[torch.Tensor]],
+        model_setting: str,
+        qs: Optional[List[Optional[torch.Tensor]]] = None,
+        record_internals: bool = False,
+        record_vectors: bool = False,
+        record_inoutmaps: bool = False,
+        inoutmaps_probing_vec: Optional[torch.Tensor] = None,
+    ) -> List[torch.Tensor]:
+
+        assert len(noises) == len(ys), "noises and ys must have same length"
+        assert model_setting in ["default"], "model_setting must be 'default' for this model class"
+
+        bs = noises[0].shape[0]
+        assert bs == self.bs, f"Model was initialized with bs={self.bs}, but got input bs={bs}"
+
+        device = self.device
+
+        biases, w_in = self.get_biases_and_w_in(n=n, device=device)
+        prescaled_w_inq = self.get_winq(n=n, device=device) if qs is not None else None
+
+        state = self._init_runtime_state(bs, n, device)
+        if self.args.initiate_w_in_tuning_with_steady_state_vals:
+            # print(f'win_tuning shape: {state["w_in_tuning"].shape}, biases shape: {biases.shape}, w_in_lr shape: {self.w_in_lr.shape}, w_in_decay shape: {self.w_in_decay.shape}')
+            state["w_in_tuning"] = self._compute_steady_state_w_in_tuning(biases)
+            # print(f'win_tuning shape after initialisation: {state["w_in_tuning"].shape} ')
+
+        w_out = state["w_out"]
+        bias_tuning = state["bias_tuning"]
+        u = state["u"]
+        x = state["x"]
+        e = state["e"]
+        qlp = state["qlp"]
+        ylp = state["ylp"]
+        elp = state["elp"]
+        w_in_tuning = state["w_in_tuning"]
+        x_state = state["x_state"]
+
+        lr, lr0, lr_mult = self._init_lr(bs)
+        wd = self._assign_wd(lr0, n)
+
+        if qs is None:
+            qs = [torch.zeros((1,), device=device)] * len(ys)
+
+        tauqlpf = 1.0 + self.softplus(self.tauqlpf_m1)
+        tauylpf = 1.0 + self.softplus(self.tauylpf_m1)
+        tauelpf = 1.0 + self.softplus(self.tauelpf_m1)
+
+
+        if self.args.inj_transform == "sigmoid":
+            injlim = torch.sigmoid
+        elif self.args.inj_transform == "identity":
+            injlim = lambda x: x
+        else:
+            raise ValueError(f"Unknown inj_transform {self.args.inj_transform}")
+
+        inj_ = injlim(self.direct_injection_scale) * self.args.direct_inj_limiter
+
+        a_means: List[torch.Tensor] = []
+
+        if record_internals:
+            self.internals = {
+                "u": [],
+                "e": [],
+                "qlp": [],
+                "ylp": [],
+                "elp": [],
+                "lr": [],
+                "x": [],
+            }
+        if record_vectors:
+            raise NotImplementedError("record_vectors not yet implemented for this model class")
+            # self.vectors = {
+            #     "w_out": [],
+            #     "h": [],
+            #     "biases_": [],
+            #     "x": [],
+            #     "w_in_": [],
+            #     "scaled_q_in": [],
+            #     }
+        if record_inoutmaps:
+            self.inoutmaps = []
+            if inoutmaps_probing_vec is None:
+                raise ValueError("inoutmaps_probing_vec must be provided if record_inoutmaps is True")
+
+        if self.args.softclamp_input_scale_0to1:
+            input_scale_ = self.softclamp(self.input_scale, min_val=0.0, max_val=1.0)
+        else:
+            input_scale_ = self.input_scale
+
+        if self.args.softclamp_output_scale_0to1:
+            output_scale_ = self.softclamp(self.output_scale, min_val=0.0, max_val=1.0)
+        else:
+            output_scale_ = self.output_scale
+            
+        for y, internal_noise, q in zip(ys, noises, qs):
+            y, internal_noise, q = self._prep_inputs(y, internal_noise, q, bs=bs)
+
+            # y = input_scale_ * y
+            y = torch.multiply(input_scale_, y)
+            # print(f"input_scale: {input_scale_.data}, y after scaling: {y}")
+            qlp = self._lowpass_filter(q, qlp, tauqlpf, enable=not self.args.disable_lpfs)
+            scaled_q_in = self._compute_scaled_q_in(prescaled_w_inq, qlp)
+
+            x, x_state = self._update_x(x, u, elp, x_state)
+
+            w_in_ = self._compute_w_in(w_in, w_in_tuning)
+            biases_, bias_tuning = self._bias_update(biases, bias_tuning, x, w_in_, scaled_q_in)
+
+            mask = torch.isnan(y)
+
+            if self.args.injection_opt == 1:
+                raise ValueError("injection_opt 1 is deprecated, use injection_opt 2 instead")
+
+            x = x + internal_noise * self.sigma_x
+
+            h = self._compute_hidden(biases_, x, w_in_, scaled_q_in)
+            u = self._compute_u(w_out, h, x)
+
+            a_mean = output_scale_ * u
+
+            if record_inoutmaps:
+                inoutmap_h = self._compute_hidden(biases_, inoutmaps_probing_vec, w_in_, scaled_q_in)
+                inoutmap_u = self._compute_u(w_out, inoutmap_h, inoutmaps_probing_vec)
+                self.inoutmaps.append((inoutmap_u, inoutmaps_probing_vec))
+
+            y_ = torch.where(mask, u + self.args.channel_trial_extra_error, y)
+            ylp = self._lowpass_filter(y_, ylp, tauylpf, enable=not self.args.disable_lpfs)
+
+            e = ylp - u
+            elp = self._lowpass_filter(e, elp, tauelpf, enable=not self.args.disable_lpfs)
+
+            h_bar = self._compute_h_bar(
+                h=h,
+                biases_=biases_,
+                x=x,
+                w_in_=w_in_,
+                u=u,
+                e=elp,
+                scaled_q_in=scaled_q_in,
+                inj_=inj_,
+                mode=self.args.injection_opt,
+                x_state=x_state,
+            )
+
+            dw_out1, dw_out2 = self._compute_dw_out(lr, elp, h_bar, w_out, wd)
+
+            dw_out = dw_out1 + dw_out2
+
+            # if self.args.apply_lr_decay:
+                #norms = torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1))     
+
+            w_out = w_out + dw_out 
+
+            if self.args.enable_w_in_plasticity:
+                w_in_tuning = self._w_in_update(w_in_tuning, h_bar)
+
+            if self.args.apply_lr_decay:
+                lr_mult, lr = self._lr_update(lr_mult, lr0, weight_info={'w_out': w_out, 'dw_out': dw_out, 'dw_out1': dw_out1, 'dw_out2': dw_out2})
+
+            a_means.append(a_mean)
+
+            if record_internals:
+                self.internals["u"].append(u)
+                self.internals["e"].append(e)
+                self.internals["qlp"].append(qlp)
+                self.internals["ylp"].append(ylp)
+                self.internals["elp"].append(elp)
+                self.internals["lr"].append(lr)
+                self.internals["x"].append(x)
+
+        if record_internals:
+            for k in self.internals:
+                self.internals[k] = torch.stack(self.internals[k], dim=0)
+            return a_means, self.internals
+
+        if record_inoutmaps:
+            return a_means, self.inoutmaps
+
+        return a_means

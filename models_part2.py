@@ -819,9 +819,17 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         for y, internal_noise, q in zip(ys, noises, qs):
             y, internal_noise, q = self._prep_inputs(y, internal_noise, q, bs=bs)
 
-            # y = input_scale_ * y
+            #check if any of ys is inf if yes: check that the whole batch is inf and if not raise an error, 
+            #if yes replace with nan and set skip_plasticity to True for this step
+            skip_plasticity = False
+            if torch.isinf(y).any():
+                if not torch.isinf(y).all():
+                    raise ValueError("Found some but not all values of y to be inf, cannot proceed")
+                y = torch.full_like(y, float("nan"))
+                skip_plasticity = True
+
             y = torch.multiply(input_scale_, y)
-            # print(f"input_scale: {input_scale_.data}, y after scaling: {y}")
+
             qlp = self._lowpass_filter(q, qlp, tauqlpf, enable=not self.args.disable_lpfs)
             scaled_q_in = self._compute_scaled_q_in(prescaled_w_inq, qlp)
 
@@ -866,20 +874,20 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 x_state=x_state,
             )
 
-            dw_out1, dw_out2 = self._compute_dw_out(lr, elp, h_bar, w_out, wd)
+            if not skip_plasticity:
+                dw_out1, dw_out2 = self._compute_dw_out(lr, elp, h_bar, w_out, wd)
 
-            dw_out = dw_out1 + dw_out2
+                dw_out = dw_out1 + dw_out2
 
-            # if self.args.apply_lr_decay:
-                #norms = torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1))     
+                # if self.args.apply_lr_decay:
+                    #norms = torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1))     
+                w_out = w_out + dw_out 
 
-            w_out = w_out + dw_out 
+                if self.args.enable_w_in_plasticity:
+                    w_in_tuning = self._w_in_update(w_in_tuning, h_bar)
 
-            if self.args.enable_w_in_plasticity:
-                w_in_tuning = self._w_in_update(w_in_tuning, h_bar)
-
-            if self.args.apply_lr_decay:
-                lr_mult, lr = self._lr_update(lr_mult, lr0, weight_info={'w_out': w_out, 'dw_out': dw_out, 'dw_out1': dw_out1, 'dw_out2': dw_out2})
+                if self.args.apply_lr_decay:
+                    lr_mult, lr = self._lr_update(lr_mult, lr0, weight_info={'w_out': w_out, 'dw_out': dw_out, 'dw_out1': dw_out1, 'dw_out2': dw_out2})
 
             a_means.append(a_mean)
 

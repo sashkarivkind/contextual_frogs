@@ -5,7 +5,8 @@ sys.path.append('/homes/ar2342/one_more_dir/contextual_frogs/')
 import numpy as np
 import torch
 from types import SimpleNamespace
-from models_part2 import BatchedElboGenerativeModelTopMulti
+# from models_part2 import BatchedElboGenerativeModelTopMulti
+from branched_model_part2 import BatchedElboGenerativeModelTopMulti
 import os
 from optimise_clnn import load_subject_data
 from utils_part2 import load_data_to_batch
@@ -124,7 +125,8 @@ n_seeds_baseline_LUT = { #this can be modified according to the model of interes
 n_subjects = n_subjects_LUT[mode]   
 n_seeds = n_seeds_baseline_LUT[mode] * model_specific_seed_factor #72  
 # n_subjects = 16 if mode == 'ERSR' else 24
-template ='lr_reduct2' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+# template ='lr_reduct2' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+template ='lr_reduct2averaged' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
 lr = 1e-2# 3e-3 #1e-2
 class Scheduler:
     '''
@@ -361,6 +363,57 @@ elif template == 'rich':
         manual_w_in_scale = 1e-5,
         # direct_inj_limiter=0.45,
     )
+elif template == 'lr_reduct2averaged':
+        args = SimpleNamespace(
+        model='default',
+        enable_q_scale_tuning= mode == 'MU',
+        assume_opt_output_noise=True,
+        enable_qlpf=False,
+        enable_ylpf=False,
+        enable_elpf=False,
+        multirate_m=1,          # 
+        apply_lr_decay=True, #False,
+        noise_injection_node='a',
+        model_tie_lr_weight_decay=False,
+        bs=n_subjects * n_seeds,                      # IMPORTANT: one batch entry per subject
+        zzz_legacy_init=False,
+        enable_output_scale_tuning= True, #False,# mode == 'MU',
+        enable_input_scale_tuning= False, #False,# mode == 'MU',
+        softclamp_output_scale_0to1= True, #False,# mode == 'MU',
+        softclamp_input_scale_0to1= False, #False,# mode == 'MU',
+        enable_u_feedback_scale_tuning=False, #True,
+        enable_direct_injection= False, #mode == 'MU',
+        injection_opt=3,           
+        # injection_opt=0,           
+        skip_gain=0.0,
+        channel_trial_extra_error=0.0,
+        lr_min_mult = 0, #1e-3,
+        weight_decay_mode='softplus', #'sigmoid', #
+        # weight_decay_mode='sigmoid',
+        nl_activation='relu',
+        # nl_activation= 'rescaled_sigmoid',#'rescaled_sigmoid',#'relu', #['relu', 'const'], # 'rescaled_sigmoid', #'relu', #
+        n=128*8 if mode == 'ERSR' else 256,
+        disable_lpfs=True,
+        optimizer_alg='RMSprop',
+        n_seeds=n_seeds,
+        fudge=1e-30,
+        lr_recovery_rate = 0.04,
+        lr_update_mode = "recoverable",
+        inj_transform = "identity",
+        fixed_injection_param = 0.4,
+        # fixed_injection_param = 0.0,
+        lr_update_qty = "wout_norm",
+        x_update_mode = "x_fast_only_lpf",
+        x_lpf_softplus = True,
+        batch_param_period = n_seeds,
+        batch_param_tie_names = "all",   # or a list, e.g. ["log_learning_rate", "sp_weight_decay"]
+        batch_param_tie_grad = "sum",
+        # fixed_u_feedback_scale = 0.6,
+        # lr_update_mode = "basic",
+        # direct_inj_limiter=0.45,
+    )
+
+
 # -----------------------
 # 2) Load all 16 subjects, build [T, B] tensors (pad with NaNs)
 # -----------------------
