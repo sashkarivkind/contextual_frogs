@@ -126,7 +126,8 @@ n_subjects = n_subjects_LUT[mode]
 n_seeds = n_seeds_baseline_LUT[mode] * model_specific_seed_factor #72  
 # n_subjects = 16 if mode == 'ERSR' else 24
 # template ='lr_reduct2' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
-template ='lr_reduct2averaged' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+# template ='lr_reduct2averaged' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+template ='state-space' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
 lr = 1e-2# 3e-3 #1e-2
 class Scheduler:
     '''
@@ -229,8 +230,9 @@ if template == 'lr_reduct2':
         optimizer_alg='RMSprop',
         n_seeds=n_seeds,
         fudge=1e-30,
-        lr_recovery_rate = 0.04,
-        lr_update_mode = "recoverable",
+        # lr_recovery_rate = 0.04,
+        # lr_update_mode = "recoverable",
+        lr_update_mode = "zero_order",
         inj_transform = "identity",
         fixed_injection_param = 0.4,
         # fixed_injection_param = 0.0,
@@ -249,7 +251,7 @@ elif template == 'multirate':
         enable_qlpf=False,
         enable_ylpf=False,
         enable_elpf=False,
-        multirate_m=1,          # 
+        multirate_m=2,          # 
         apply_lr_decay=False, #False,
         noise_injection_node='a',
         model_tie_lr_weight_decay=False,
@@ -287,7 +289,7 @@ elif template == 'state-space':
         enable_qlpf=False,
         enable_ylpf=False,
         enable_elpf=False,
-        multirate_m=1,          # 
+        multirate_m=2,          # 
         apply_lr_decay=False, #False,
         noise_injection_node='a',
         model_tie_lr_weight_decay=False,
@@ -315,6 +317,9 @@ elif template == 'state-space':
         bound_weight_decay = False,
         enable_weight_decay_exp = False,
         enable_weight_learning_exp = False,
+        batch_param_period = n_seeds,
+        batch_param_tie_names = "all",   # or a list, e.g. ["log_learning_rate", "sp_weight_decay"]
+        batch_param_tie_grad = "sum",
         # direct_inj_limiter=0.45,
     )
 elif template == 'rich':
@@ -398,7 +403,9 @@ elif template == 'lr_reduct2averaged':
         n_seeds=n_seeds,
         fudge=1e-30,
         lr_recovery_rate = 0.04,
-        lr_update_mode = "recoverable",
+        # lr_update_mode = "recoverable",
+        lr_update_mode = "zero_order",
+        enable_sigma_b_tuning = False,
         inj_transform = "identity",
         fixed_injection_param = 0.4,
         # fixed_injection_param = 0.0,

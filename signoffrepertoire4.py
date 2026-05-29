@@ -94,9 +94,11 @@ playlist.update( {'savings': 2 * [(P0, TsN), (Pplus, TsA), (Pminus, TsB), (Pchan
 
 
 'wm_sr_baseline': [(P0, 192), (Pplus, 384), (Pminus, 20), (Pchannel, 192)],
+'wm_sr_3xbaseline': [(P0, 192), (Pplus, 384*3), (Pminus, 20), (Pchannel, 192)],
 'wm_sr_manipulation': [(P0, 192), (Pplus, 384), (Pminus, 19), (P0, 1), (Pchannel, 192)],
 'wmE2_sr_baseline': [(P0, 192), (Pminus, 20), (Pchannel, 150)],
 'wmE3_sr_baseline': [(P0, 192), (Pplus, 384), (Pchannel, 192)],
+'wmE3_sr_3xbaseline': [(P0, 192), (Pplus, 384*3), (Pchannel, 192)],
 
 'pretrained_sr_baseline0p5': [(P0, 192), (Pplus, 384//2), (Pminus, 20), (Pchannel, 364)],
 'pretrained_sr0p5': [(P0, 192), (Pminus, 384//2), (Pplus, 384//2),  (Pminus, 20), (Pchannel, 364)],
@@ -144,12 +146,13 @@ for i in range(11):
     playlist.update( {f'albert_block_{i}': albert_block(enable_noise=enable_noise)} )
 
 hrz_params = {'z_list': [0.1,0.5,0.9], 'n_blocks': 25}
-for iter in range(100):
+for iter in range(10):
     hrz_playlist =  generate_herzfeld_scenarios(**hrz_params, suffix=f'${iter}', probe_first=True)
     playlist.update(hrz_playlist)
 
 
 parsed_playlist = {k: parse_samples(v) for k, v in playlist.items()}
 print(f'generated {len(parsed_playlist)} paradigms: {list(parsed_playlist.keys())}')
-with open('signoffrepertoire4.3h100.pkl', 'wb') as f:
+# with open('signoffrepertoire4.3h100.pkl', 'wb') as f:
+with open('signoffrepertoire4.3.pkl', 'wb') as f:
     pickle.dump(parsed_playlist, f)

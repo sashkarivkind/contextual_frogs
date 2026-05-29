@@ -56,6 +56,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "softclamp_output_scale_0to1": False,
             "fixed_u_feedback_scale": 1.0,
             "x_lpf_softplus": False,
+            "at_y_eq_inf": None,
                     }
 
         self.device = device
@@ -298,7 +299,12 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             self.x_fast_gain = nn.Parameter(torch.full((self.bs,), 0.5, device=device))
         elif args.x_update_mode == "u_only_lpf":
             self.x_slow_alpha = nn.Parameter(torch.full((self.bs,), 0.5, device=device))
-
+        
+        if self.args.at_y_eq_inf == "skip_slow_timescale_plasticity":
+            # a precomputed mask size bs,n,m with 0s at [:,:,0] and 1s elsewhere, to be multiplied with the dw when y is inf
+            # to be used for only with w_in plasticity disabled
+            self.slow_plasticity_skip_mask = torch.zeros((self.bs, args.n, self.m), device=device) 
+            self.slow_plasticity_skip_mask[:, :, 1:] = 1.0
     # ---------------------------
     # mode helpers
     # ---------------------------
@@ -563,7 +569,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             lr_mult = self.args.lr_min_mult + (lr_mult - self.args.lr_min_mult) * \
                 torch.exp(-(nonneg_decay_coeff * norms))
             lr = lr0 * lr_mult
-        if self.args.lr_update_mode == "recoverable":
+        elif self.args.lr_update_mode == "recoverable":
             #same as basic but with a recovery toward lr_mult=1
             nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
             lr_plastic = lr_mult - self.args.lr_min_mult
@@ -571,14 +577,21 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             lr_plastic = lr_plastic * torch.exp(-(nonneg_decay_coeff * norms))
             lr_mult = self.args.lr_min_mult + lr_plastic
             lr = lr0 * lr_mult
-        if self.args.lr_update_mode == "recoverable_opt2":
+        elif self.args.lr_update_mode == "recoverable_opt2":
             #same as recoverable but with the order of updates swapped
             nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
             lr_plastic = lr_mult - self.args.lr_min_mult
             lr_plastic = (1-self.args.lr_recovery_rate) * lr_plastic + self.args.lr_recovery_rate * 1.0
             lr_plastic = lr_plastic * torch.exp(-(nonneg_decay_coeff * norms))
             lr_mult = self.args.lr_min_mult + lr_plastic
+            lr = lr0 * lr_mult
+        elif self.args.lr_update_mode == "zero_order":
+            nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
+            lr_plastic = torch.exp(-(nonneg_decay_coeff * norms)) * (1.0 - self.args.lr_min_mult)
+            lr_mult = self.args.lr_min_mult + lr_plastic
             lr = lr0 * lr_mult        
+        else:
+            raise ValueError(f"Unknown lr_update_mode {self.args.lr_update_mode}")        
         return lr_mult, lr
 
     # ---------------------------
@@ -822,11 +835,21 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             #check if any of ys is inf if yes: check that the whole batch is inf and if not raise an error, 
             #if yes replace with nan and set skip_plasticity to True for this step
             skip_plasticity = False
+            skip_slow_timescale_plasticity = False
             if torch.isinf(y).any():
+                if self.args.at_y_eq_inf is None:
+                    raise ValueError("Found inf values in y but no at_y_eq_inf behavior specified in args")
                 if not torch.isinf(y).all():
                     raise ValueError("Found some but not all values of y to be inf, cannot proceed")
-                y = torch.full_like(y, float("nan"))
-                skip_plasticity = True
+                
+                if self.args.at_y_eq_inf == "skip_plasticity":
+                    y = torch.full_like(y, float("nan"))
+                    skip_plasticity = True
+                elif self.args.at_y_eq_inf == "skip_slow_timescale_plasticity":
+                    y = torch.full_like(y, float("nan"))
+                    skip_slow_timescale_plasticity = True
+                else:
+                    raise ValueError(f"Unknown at_y_eq_inf behavior: {self.args.at_y_eq_inf}")
 
             y = torch.multiply(input_scale_, y)
 
@@ -878,6 +901,9 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 dw_out1, dw_out2 = self._compute_dw_out(lr, elp, h_bar, w_out, wd)
 
                 dw_out = dw_out1 + dw_out2
+
+                if skip_slow_timescale_plasticity:
+                    dw_out = self.slow_plasticity_skip_mask * dw_out
 
                 # if self.args.apply_lr_decay:
                     #norms = torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1))     

@@ -732,7 +732,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             lr_mult = self.args.lr_min_mult + (lr_mult - self.args.lr_min_mult) * \
                 torch.exp(-(nonneg_decay_coeff * norms))
             lr = lr0 * lr_mult
-        if self.args.lr_update_mode == "recoverable":
+        elif self.args.lr_update_mode == "recoverable":
             #same as basic but with a recovery toward lr_mult=1
             nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
             lr_plastic = lr_mult - self.args.lr_min_mult
@@ -740,14 +740,21 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             lr_plastic = lr_plastic * torch.exp(-(nonneg_decay_coeff * norms))
             lr_mult = self.args.lr_min_mult + lr_plastic
             lr = lr0 * lr_mult
-        if self.args.lr_update_mode == "recoverable_opt2":
+        elif self.args.lr_update_mode == "recoverable_opt2":
             #same as recoverable but with the order of updates swapped
             nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
             lr_plastic = lr_mult - self.args.lr_min_mult
             lr_plastic = (1-self.args.lr_recovery_rate) * lr_plastic + self.args.lr_recovery_rate * 1.0
             lr_plastic = lr_plastic * torch.exp(-(nonneg_decay_coeff * norms))
             lr_mult = self.args.lr_min_mult + lr_plastic
+            lr = lr0 * lr_mult
+        elif self.args.lr_update_mode == "zero_order":
+            nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
+            lr_plastic = torch.exp(-(nonneg_decay_coeff * norms)) * (1.0 - self.args.lr_min_mult)
+            lr_mult = self.args.lr_min_mult + lr_plastic
             lr = lr0 * lr_mult        
+        else:
+            raise ValueError(f"Unknown lr_update_mode {self.args.lr_update_mode}")        
         return lr_mult, lr
 
     # ---------------------------
