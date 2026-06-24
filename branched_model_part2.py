@@ -28,6 +28,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "direct_inj_limiter": 1.0,
             "lr_bound": None,
             "enable_sigma_b_tuning": True,
+            "manual_sigma_b": 0.1,
             "bound_weight_decay": False,
             "enable_weight_decay_exp": False,
             "enable_weight_learning_exp": False,
@@ -191,7 +192,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
 
         self._set_batch_tensor(
             "sigma_b",
-            init_sigma_b if args.enable_sigma_b_tuning else torch.full((self.bs,), 0.1, device=device),
+            init_sigma_b if args.enable_sigma_b_tuning else torch.full((self.bs,), args.manual_sigma_b, device=device),
             trainable=bool(args.enable_sigma_b_tuning),
         )
 

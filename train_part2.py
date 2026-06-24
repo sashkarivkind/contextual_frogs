@@ -126,8 +126,8 @@ n_subjects = n_subjects_LUT[mode]
 n_seeds = n_seeds_baseline_LUT[mode] * model_specific_seed_factor #72  
 # n_subjects = 16 if mode == 'ERSR' else 24
 # template ='lr_reduct2' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
-# template ='lr_reduct2averaged' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
-template ='state-space' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+template ='lr_reduct2averaged' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
+# template ='state-space' #'rich'#,'multirate'#'state-space'#, 'state-space', #'multirate'#'state-space'#'multirate' #'state-space' #'lr_reduct' #
 lr = 1e-2# 3e-3 #1e-2
 class Scheduler:
     '''
@@ -233,6 +233,8 @@ if template == 'lr_reduct2':
         # lr_recovery_rate = 0.04,
         # lr_update_mode = "recoverable",
         lr_update_mode = "zero_order",
+        # lr_update_mode = "zero_order_poly1",
+        # lr_update_mode = "zero_order_poly2",
         inj_transform = "identity",
         fixed_injection_param = 0.4,
         # fixed_injection_param = 0.0,
@@ -313,6 +315,7 @@ elif template == 'state-space':
         priority_intervals=priority_intervals,
         priority_factor=priority_factor,
         enable_sigma_b_tuning = False,
+        # manual_sigma_b = 0.1,
         lr_bound = 0.99,
         bound_weight_decay = False,
         enable_weight_decay_exp = False,
@@ -406,6 +409,8 @@ elif template == 'lr_reduct2averaged':
         # lr_update_mode = "recoverable",
         lr_update_mode = "zero_order",
         enable_sigma_b_tuning = False,
+        # manual_sigma_b = 0.1,
+        manual_sigma_b = 0.17570865,
         inj_transform = "identity",
         fixed_injection_param = 0.4,
         # fixed_injection_param = 0.0,

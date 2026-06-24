@@ -28,6 +28,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             "direct_inj_limiter": 1.0,
             "lr_bound": None,
             "enable_sigma_b_tuning": True,
+            "manual_sigma_b": 0.1,
             "bound_weight_decay": False,
             "enable_weight_decay_exp": False,
             "enable_weight_learning_exp": False,
@@ -186,7 +187,7 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
         self.sigma_b = (
             nn.Parameter(init_sigma_b)
             if args.enable_sigma_b_tuning
-            else torch.full((self.bs,), 0.1, device=device, requires_grad=False)
+            else torch.full((self.bs,), args.manual_sigma_b, device=device, requires_grad=False)
         )
 
         # scale of input weights added to explore input weight plastisity
@@ -590,6 +591,16 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
             lr_plastic = torch.exp(-(nonneg_decay_coeff * norms)) * (1.0 - self.args.lr_min_mult)
             lr_mult = self.args.lr_min_mult + lr_plastic
             lr = lr0 * lr_mult        
+        elif self.args.lr_update_mode == "zero_order_poly1":
+            nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
+            lr_plastic = torch.reciprocal(1 + (nonneg_decay_coeff * norms)) * (1.0 - self.args.lr_min_mult)
+            lr_mult = self.args.lr_min_mult + lr_plastic
+            lr = lr0 * lr_mult
+        elif self.args.lr_update_mode == "zero_order_poly2":
+            nonneg_decay_coeff = torch.exp(self.log_learning_rate_decay)
+            lr_plastic = torch.reciprocal(1 + torch.pow(nonneg_decay_coeff * norms, 2)) * (1.0 - self.args.lr_min_mult)
+            lr_mult = self.args.lr_min_mult + lr_plastic
+            lr = lr0 * lr_mult  
         else:
             raise ValueError(f"Unknown lr_update_mode {self.args.lr_update_mode}")        
         return lr_mult, lr
@@ -803,6 +814,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 "elp": [],
                 "lr": [],
                 "x": [],
+                "w_out_norm": [],
+                "dw_out_norm": [],
             }
         if record_vectors:
             raise NotImplementedError("record_vectors not yet implemented for this model class")
@@ -925,6 +938,8 @@ class BatchedElboGenerativeModelTopMulti(nn.Module):
                 self.internals["elp"].append(elp)
                 self.internals["lr"].append(lr)
                 self.internals["x"].append(x)
+                self.internals["w_out_norm"].append(torch.sqrt(self.fudge + torch.sum(w_out ** 2, dim=1)))
+                self.internals["dw_out_norm"].append(torch.sqrt(self.fudge + torch.sum(dw_out ** 2, dim=1)))
 
         if record_internals:
             for k in self.internals:
