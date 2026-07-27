@@ -13,9 +13,9 @@ P0=0
 Pchannel=np.nan
 
 TsN=60
-TsA=120
-TsB=20
-TsC=20
+TsA=125
+TsB=15
+TsC=50
 
 TfN1 = 136
 TfA = 240
@@ -154,5 +154,5 @@ for iter in range(10):
 parsed_playlist = {k: parse_samples(v) for k, v in playlist.items()}
 print(f'generated {len(parsed_playlist)} paradigms: {list(parsed_playlist.keys())}')
 # with open('signoffrepertoire4.3h100.pkl', 'wb') as f:
-with open('signoffrepertoire4.3.pkl', 'wb') as f:
+with open('signoffrepertoire4.371.pkl', 'wb') as f:
     pickle.dump(parsed_playlist, f)

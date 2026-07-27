@@ -9,4 +9,5 @@ results_part2/*/*
 experimental/optim/results/*/*
 experimental/optim/results/realthing512/post_sigma.txt
 experimental/optim/results/realthing512/pred_a.txt
+gnu_fig_data/
 
