@@ -103,15 +103,58 @@ def local_eval_paradigms(model, playlist_file, args, record_internals=False, rec
         return outputs, internals_by_paradigm
     return outputs
 
-def eval_single_wrap(model, paradigm, args, paradigm_name=None, record_internals=False, record_vectors=False):
+def eval_single_wrap(model, paradigm, args, paradigm_name=None, record_internals=False, record_vectors=False, single_item=False):
     outputs, internals = eval_single_paradigm(model, paradigm, args, paradigm_name, record_internals, record_vectors)
     outputs = [o.detach().cpu().numpy() for o in outputs]
     outputs = np.array(outputs)
     if record_internals:
-        for k in internals:
-            internals[k] = {kk: vv.detach().cpu().numpy() for kk, vv in internals[k].items()}
+        if not single_item:
+            for k in internals:
+                internals[k] = {kk: vv.detach().cpu().numpy() for kk, vv in internals[k].items()}
         return outputs, internals
     return outputs, None
+
+# def find_fixed_points(x_values, y_values, tol=1e-3, selection='closest_to_zero'):
+#     x_values = np.asarray(x_values, dtype=np.float32)
+#     y_values = np.asarray(y_values, dtype=np.float32)
+
+#     if y_values.ndim == 1:
+#         y_values = y_values[None, :]
+
+#     fixed_points = []
+#     for y in y_values:
+#         diffs = y - x_values
+#         candidates = []
+
+#         close_idx = np.where(np.abs(diffs) <= tol)[0]
+#         candidates.extend(x_values[close_idx].tolist())
+
+#         sign_changes = np.where(np.signbit(diffs[:-1]) != np.signbit(diffs[1:]))[0]
+#         for idx in sign_changes:
+#             x0, x1 = x_values[idx], x_values[idx + 1]
+#             d0, d1 = diffs[idx], diffs[idx + 1]
+#             # if np.isclose(d0, d1):
+#             #     crossing = 0.5 * (x0 + x1)
+#             # else:
+#             crossing = x0 - d0 * (x1 - x0) / (d1 - d0)
+#             candidates.append(float(crossing))
+
+#         if not candidates:
+#             fixed_points.append(np.nan)
+#             continue
+
+#         candidates = np.array(sorted(set(np.round(candidates, 8))), dtype=np.float32)
+#         if selection == 'closest_to_zero':
+#             fixed_points.append(candidates[np.argmin(np.abs(candidates))])
+#         elif selection == 'first':
+#             fixed_points.append(candidates[0])
+#         elif selection == 'last':
+#             fixed_points.append(candidates[-1])
+#         else:
+#             raise ValueError(f'Unknown selection mode: {selection}')
+
+#     return np.asarray(fixed_points, dtype=np.float32)
+
 
 def find_fixed_points(x_values, y_values, tol=1e-3, selection='closest_to_zero'):
     x_values = np.asarray(x_values, dtype=np.float32)
@@ -126,7 +169,7 @@ def find_fixed_points(x_values, y_values, tol=1e-3, selection='closest_to_zero')
         candidates = []
 
         close_idx = np.where(np.abs(diffs) <= tol)[0]
-        candidates.extend(x_values[close_idx].tolist())
+        # candidates.extend(x_values[close_idx].tolist())
 
         sign_changes = np.where(np.signbit(diffs[:-1]) != np.signbit(diffs[1:]))[0]
         for idx in sign_changes:
@@ -136,13 +179,15 @@ def find_fixed_points(x_values, y_values, tol=1e-3, selection='closest_to_zero')
             #     crossing = 0.5 * (x0 + x1)
             # else:
             crossing = x0 - d0 * (x1 - x0) / (d1 - d0)
+            # print(f'crossing: {crossing}, x0: {x0}, x1: {x1}, d0: {d0}, d1: {d1}')
             candidates.append(float(crossing))
 
         if not candidates:
             fixed_points.append(np.nan)
             continue
-
+        # print(f'candidates before rounding and sorting: {candidates}')
         candidates = np.array(sorted(set(np.round(candidates, 8))), dtype=np.float32)
+        # print(f'candidates after rounding and sorting: {candidates}')
         if selection == 'closest_to_zero':
             fixed_points.append(candidates[np.argmin(np.abs(candidates))])
         elif selection == 'first':
@@ -153,6 +198,8 @@ def find_fixed_points(x_values, y_values, tol=1e-3, selection='closest_to_zero')
             raise ValueError(f'Unknown selection mode: {selection}')
 
     return np.asarray(fixed_points, dtype=np.float32)
+
+
 
 def eval_paradigm_with_inoutmaps(model, args, paradigm, probe_values, *, name=None):
     if name is not None:
